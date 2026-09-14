@@ -21,8 +21,18 @@ android {
         buildConfigField("String", "DEFAULT_YOUTUBE_API_KEY", "\"\"")
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("release.keystore")
+            storePassword = "soundbuzzpassword"
+            keyAlias = "soundbuzz"
+            keyPassword = "soundbuzzpassword"
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
