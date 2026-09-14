@@ -86,18 +86,25 @@ class PlaybackManager(
 
     fun onPlayerError(error: PlayerConstants.PlayerError) {
         com.example.musictube.utils.DiagnosticsLogger.logPlayer("onError", "${error.name} (Code: $error)")
+        val shouldSkip = when (error) {
+            PlayerConstants.PlayerError.VIDEO_NOT_PLAYABLE_IN_EMBEDDED_PLAYER -> true
+            PlayerConstants.PlayerError.VIDEO_NOT_FOUND -> true
+            else -> false
+        }
         val msg = when (error) {
             PlayerConstants.PlayerError.VIDEO_NOT_PLAYABLE_IN_EMBEDDED_PLAYER ->
-                "Playback restricted on this device. Skipping to next track..."
+                "Video embedding restricted by uploader. Skipping to next track..."
             PlayerConstants.PlayerError.VIDEO_NOT_FOUND ->
                 "Video not found on YouTube. Skipping to next track..."
             else ->
-                "Playback error: ${error.name}"
+                "Playback error: ${error.name}. Tap play to retry."
         }
         _playerState.update { it.copy(playState = PlayState.ERROR, errorMessage = msg) }
-        scope.launch {
-            kotlinx.coroutines.delay(2000)
-            next()
+        if (shouldSkip) {
+            scope.launch {
+                kotlinx.coroutines.delay(2000)
+                next()
+            }
         }
     }
 

@@ -14,6 +14,7 @@ import com.example.musictube.utils.DiagnosticsLogger
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.PlayerConstants
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.YouTubePlayer
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.AbstractYouTubePlayerListener
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.options.IFramePlayerOptions
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
 
 @Composable
@@ -32,6 +33,11 @@ fun YouTubePlayerViewContainer(
             YouTubePlayerView(ctx).apply {
                 enableAutomaticInitialization = false
                 lifecycleOwner.lifecycle.addObserver(this)
+
+                val options = IFramePlayerOptions.Builder(ctx)
+                    .controls(1)
+                    .rel(0)
+                    .build()
 
                 initialize(object : AbstractYouTubePlayerListener() {
                     override fun onReady(youTubePlayer: YouTubePlayer) {
@@ -59,7 +65,7 @@ fun YouTubePlayerViewContainer(
                     override fun onError(youTubePlayer: YouTubePlayer, error: PlayerConstants.PlayerError) {
                         playbackManager.onPlayerError(error)
                     }
-                })
+                }, options)
             }
         },
         update = { _ ->
