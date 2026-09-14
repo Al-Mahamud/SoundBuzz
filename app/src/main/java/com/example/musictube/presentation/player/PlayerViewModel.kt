@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.musictube.MusicTubeApplication
 import com.example.musictube.data.repository.MusicRepository
+import com.example.musictube.domain.model.LyricLine
 import com.example.musictube.domain.model.Playlist
 import com.example.musictube.domain.model.PlayerState
 import com.example.musictube.domain.model.Track
 import com.example.musictube.playback.PlaybackManager
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class PlayerViewModel(
     private val repository: MusicRepository = MusicTubeApplication.instance.repository,
     private val playbackManager: PlaybackManager = MusicTubeApplication.instance.playbackManager
@@ -27,6 +30,17 @@ class PlayerViewModel(
     val currentQueueIndex: StateFlow<Int> = playbackManager.currentQueueIndex
 
     val playlists: StateFlow<List<Playlist>> = repository.getPlaylists()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val lyrics: StateFlow<List<LyricLine>> = playerState
+        .flatMapLatest { state ->
+            val videoId = state.currentTrack?.youtubeVideoId
+            if (videoId != null) {
+                repository.getLyrics(videoId)
+            } else {
+                flowOf(emptyList())
+            }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val isFavorite: StateFlow<Boolean> = playerState

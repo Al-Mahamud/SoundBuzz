@@ -9,9 +9,11 @@ import com.example.musictube.data.local.entity.PlaylistTrackEntity
 import com.example.musictube.data.local.entity.TrackEntity
 import com.example.musictube.data.local.entity.UserPreferenceEntity
 import com.example.musictube.data.remote.api.NetworkClient
+import com.example.musictube.data.remote.innertube.InnerTubeClient
 import com.example.musictube.data.remote.model.DefaultMusicCatalog
 import com.example.musictube.domain.model.Artist
 import com.example.musictube.domain.model.Category
+import com.example.musictube.domain.model.LyricLine
 import com.example.musictube.domain.model.Playlist
 import com.example.musictube.domain.model.Track
 import com.example.musictube.domain.usecase.RecommendationEngine
@@ -182,43 +184,57 @@ class MusicRepository(
             return@flow
         }
 
-        val apiKey = getActiveApiKey()
         var tracks: List<Track> = emptyList()
 
-        if (apiKey.isNotBlank()) {
-            try {
-                val searchResponse = NetworkClient.apiService.search(query = query, apiKey = apiKey)
-                val videoIds = searchResponse.items?.mapNotNull { it.id?.videoId }?.joinToString(",")
-                if (!videoIds.isNullOrBlank()) {
-                    val detailsResponse = NetworkClient.apiService.getVideoDetails(videoIds = videoIds, apiKey = apiKey)
-                    val items = detailsResponse.items.orEmpty()
-                    if (items.isNotEmpty()) {
-                        tracks = items.mapNotNull { item ->
-                            val id = item.id ?: return@mapNotNull null
-                            val snippet = item.snippet ?: return@mapNotNull null
-                            val durationSec = DurationUtils.parseIsoDurationToSeconds(item.contentDetails?.duration)
-                            Track(
-                                id = id,
-                                youtubeVideoId = id,
-                                title = snippet.title ?: "Untitled",
-                                artist = snippet.channelTitle ?: "Unknown Artist",
-                                channel = snippet.channelTitle ?: "Unknown Artist",
-                                thumbnailUrl = snippet.thumbnails?.bestUrl() ?: "https://img.youtube.com/vi/$id/hqdefault.jpg",
-                                duration = DurationUtils.formatSecondsToTime(durationSec),
-                                durationSeconds = durationSec,
-                                category = "Search",
-                                viewCount = item.statistics?.viewCount?.toLongOrNull() ?: 0L,
-                                publishedAt = snippet.publishedAt.orEmpty()
-                            )
+        // 1. Primary: InnerTube API (Unlimited, keyless, real-time YouTube music search)
+        try {
+            tracks = InnerTubeClient.search(query)
+            if (tracks.isNotEmpty()) {
+                trackDao.insertTracks(tracks.map { TrackEntity.fromDomain(it) })
+            }
+        } catch (e: Exception) {
+            // Fallback to Data API if available
+        }
+
+        // 2. Secondary fallback: YouTube Data API v3 (if configured by user)
+        if (tracks.isEmpty()) {
+            val apiKey = getActiveApiKey()
+            if (apiKey.isNotBlank()) {
+                try {
+                    val searchResponse = NetworkClient.apiService.search(query = query, apiKey = apiKey)
+                    val videoIds = searchResponse.items?.mapNotNull { it.id?.videoId }?.joinToString(",")
+                    if (!videoIds.isNullOrBlank()) {
+                        val detailsResponse = NetworkClient.apiService.getVideoDetails(videoIds = videoIds, apiKey = apiKey)
+                        val items = detailsResponse.items.orEmpty()
+                        if (items.isNotEmpty()) {
+                            tracks = items.mapNotNull { item ->
+                                val id = item.id ?: return@mapNotNull null
+                                val snippet = item.snippet ?: return@mapNotNull null
+                                val durationSec = DurationUtils.parseIsoDurationToSeconds(item.contentDetails?.duration)
+                                Track(
+                                    id = id,
+                                    youtubeVideoId = id,
+                                    title = snippet.title ?: "Untitled",
+                                    artist = snippet.channelTitle ?: "Unknown Artist",
+                                    channel = snippet.channelTitle ?: "Unknown Artist",
+                                    thumbnailUrl = snippet.thumbnails?.bestUrl() ?: "https://img.youtube.com/vi/$id/hqdefault.jpg",
+                                    duration = DurationUtils.formatSecondsToTime(durationSec),
+                                    durationSeconds = durationSec,
+                                    category = "Search",
+                                    viewCount = item.statistics?.viewCount?.toLongOrNull() ?: 0L,
+                                    publishedAt = snippet.publishedAt.orEmpty()
+                                )
+                            }
+                            trackDao.insertTracks(tracks.map { TrackEntity.fromDomain(it) })
                         }
-                        trackDao.insertTracks(tracks.map { TrackEntity.fromDomain(it) })
                     }
+                } catch (e: Exception) {
+                    // Fallback to local catalog
                 }
-            } catch (e: Exception) {
-                // Fallback to local search
             }
         }
 
+        // 3. Offline fallback
         if (tracks.isEmpty()) {
             val q = query.lowercase()
             tracks = DefaultMusicCatalog.catalogTracks.filter {
@@ -230,6 +246,11 @@ class MusicRepository(
 
         val favIds = favoriteDao.getAllFavoriteVideoIdsDirect().toSet()
         emit(tracks.map { it.copy(isFavorite = favIds.contains(it.youtubeVideoId)) })
+    }.flowOn(Dispatchers.IO)
+
+    fun getLyrics(videoId: String): Flow<List<LyricLine>> = flow {
+        val lyrics = InnerTubeClient.getLyrics(videoId)
+        emit(lyrics)
     }.flowOn(Dispatchers.IO)
 
     fun getRecommendedTracks(): Flow<List<Track>> = combine(

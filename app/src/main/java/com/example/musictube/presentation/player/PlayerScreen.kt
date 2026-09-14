@@ -35,8 +35,11 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.SmartDisplay
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -92,6 +95,7 @@ fun PlayerScreen(
     val queue by viewModel.queue.collectAsState()
     val currentQueueIndex by viewModel.currentQueueIndex.collectAsState()
     val playlists by viewModel.playlists.collectAsState()
+    val lyrics by viewModel.lyrics.collectAsState()
 
     val track = playerState.currentTrack
 
@@ -100,6 +104,7 @@ fun PlayerScreen(
     var showQueueBottomSheet by remember { mutableStateOf(false) }
     var showAddToPlaylistDialog by remember { mutableStateOf(false) }
     var showDiagnosticsSheet by remember { mutableStateOf(false) }
+    var showLyricsSheet by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -129,6 +134,13 @@ fun PlayerScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showLyricsSheet = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Subtitles,
+                            contentDescription = "Live Lyrics",
+                            tint = if (lyrics.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     IconButton(onClick = { showDiagnosticsSheet = true }) {
                         Icon(
                             imageVector = Icons.Default.Info,
@@ -542,5 +554,94 @@ fun PlayerScreen(
         com.example.musictube.presentation.components.DiagnosticsSheet(
             onDismiss = { showDiagnosticsSheet = false }
         )
+    }
+
+    // Live Synced Lyrics Bottom Sheet
+    if (showLyricsSheet && track != null) {
+        val sheetState = rememberModalBottomSheetState()
+        val listState = rememberLazyListState()
+
+        val activeIndex = lyrics.indexOfFirst { it.isActiveAt(playerState.currentPositionSeconds) }
+        LaunchedEffect(activeIndex) {
+            if (activeIndex >= 0) {
+                listState.animateScrollToItem(activeIndex)
+            }
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = { showLyricsSheet = false },
+            sheetState = sheetState
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Live Synced Lyrics",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = track.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    IconButton(onClick = { showLyricsSheet = false }) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (lyrics.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(280.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No live synced lyrics found for this track.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(400.dp)
+                    ) {
+                        itemsIndexed(lyrics) { _, line ->
+                            val isActive = line.isActiveAt(playerState.currentPositionSeconds)
+                            Text(
+                                text = line.text,
+                                style = if (isActive) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Normal,
+                                color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        viewModel.seekTo(line.startMs / 1000f)
+                                    }
+                                    .padding(vertical = 10.dp, horizontal = 8.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

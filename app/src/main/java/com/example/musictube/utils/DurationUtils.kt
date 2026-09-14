@@ -32,4 +32,15 @@ object DurationUtils {
     fun formatSecondsToTime(seconds: Float): String {
         return formatSecondsToTime(seconds.toLong())
     }
+
+    fun parseTimeStringToSeconds(time: String?): Long {
+        if (time.isNullOrBlank()) return 0L
+        val parts = time.trim().split(":")
+        return when (parts.size) {
+            1 -> parts[0].toLongOrNull() ?: 0L
+            2 -> (parts[0].toLongOrNull() ?: 0L) * 60 + (parts[1].toLongOrNull() ?: 0L)
+            3 -> (parts[0].toLongOrNull() ?: 0L) * 3600 + (parts[1].toLongOrNull() ?: 0L) * 60 + (parts[2].toLongOrNull() ?: 0L)
+            else -> 0L
+        }
+    }
 }
