@@ -38,108 +38,67 @@ class PlaybackManager(
 
     private var activeYouTubePlayer: YouTubePlayer? = null
     private var isPlayerReady = false
-    private var pendingTrackToPlay: Track? = null
-
-    private var _sharedPlayerView: YouTubePlayerView? = null
-
-    fun getSharedPlayerView(activityContext: Context? = null): YouTubePlayerView {
-        val existing = _sharedPlayerView
-        if (existing != null) return existing
-
-        val ctx = activityContext ?: context
-        return YouTubePlayerView(ctx).apply {
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-            enableAutomaticInitialization = false
-
-            val options = IFramePlayerOptions.Builder()
-                .controls(1)
-                .rel(0)
-                .autoplay(1)
-                .build()
-
-            initialize(playerListener, options)
-            _sharedPlayerView = this
-        }
-    }
-
-    private val playerListener = object : AbstractYouTubePlayerListener() {
-        override fun onReady(youTubePlayer: YouTubePlayer) {
-            isPlayerReady = true
-            activeYouTubePlayer = youTubePlayer
-            com.example.musictube.utils.DiagnosticsLogger.logPlayer("onReady() fired", "activeYouTubePlayer initialized")
-            val trackToPlay = pendingTrackToPlay ?: _playerState.value.currentTrack
-            if (trackToPlay != null) {
-                com.example.musictube.utils.DiagnosticsLogger.logPlayer("onReady -> loadVideo", "videoId: ${trackToPlay.youtubeVideoId}")
-                youTubePlayer.loadVideo(trackToPlay.youtubeVideoId, _playerState.value.currentPositionSeconds)
-                _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
-                pendingTrackToPlay = null
-            }
-        }
-
-        override fun onStateChange(youTubePlayer: YouTubePlayer, state: PlayerConstants.PlayerState) {
-            com.example.musictube.utils.DiagnosticsLogger.logPlayer("onStateChange", state.name)
-            when (state) {
-                PlayerConstants.PlayerState.PLAYING -> {
-                    _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
-                }
-                PlayerConstants.PlayerState.PAUSED -> {
-                    _playerState.update { it.copy(playState = PlayState.PAUSED) }
-                }
-                PlayerConstants.PlayerState.BUFFERING -> {
-                    _playerState.update { it.copy(playState = PlayState.BUFFERING) }
-                }
-                PlayerConstants.PlayerState.ENDED -> {
-                    handleTrackEnded()
-                }
-                else -> {}
-            }
-        }
-
-        override fun onCurrentSecond(youTubePlayer: YouTubePlayer, second: Float) {
-            _playerState.update { it.copy(currentPositionSeconds = second) }
-        }
-
-        override fun onVideoDuration(youTubePlayer: YouTubePlayer, duration: Float) {
-            _playerState.update { it.copy(durationSeconds = duration) }
-        }
-
-        override fun onError(youTubePlayer: YouTubePlayer, error: PlayerConstants.PlayerError) {
-            com.example.musictube.utils.DiagnosticsLogger.logPlayer("onError", "${error.name} (Code: $error)")
-            val msg = when (error) {
-                PlayerConstants.PlayerError.VIDEO_NOT_PLAYABLE_IN_EMBEDDED_PLAYER ->
-                    "Playback restricted on this device. Skipping to next track..."
-                PlayerConstants.PlayerError.VIDEO_NOT_FOUND ->
-                    "Video not found on YouTube. Skipping to next track..."
-                else ->
-                    "Playback error: ${error.name}"
-            }
-            _playerState.update { it.copy(playState = PlayState.ERROR, errorMessage = msg) }
-            scope.launch {
-                kotlinx.coroutines.delay(2000)
-                next()
-            }
-        }
-    }
-
-    fun getPlayerListener(): AbstractYouTubePlayerListener = playerListener
 
     fun attachYouTubePlayer(player: YouTubePlayer) {
         activeYouTubePlayer = player
         isPlayerReady = true
-        val trackToPlay = pendingTrackToPlay ?: _playerState.value.currentTrack
-        if (trackToPlay != null) {
-            player.loadVideo(trackToPlay.youtubeVideoId, _playerState.value.currentPositionSeconds)
-            _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
-            pendingTrackToPlay = null
+        com.example.musictube.utils.DiagnosticsLogger.logPlayer("attachYouTubePlayer", "Player attached to PlaybackManager")
+        _playerState.value.currentTrack?.let { track ->
+            if (_playerState.value.playState == PlayState.PLAYING || _playerState.value.playState == PlayState.BUFFERING) {
+                com.example.musictube.utils.DiagnosticsLogger.logPlayer("attachYouTubePlayer -> loadVideo", track.youtubeVideoId)
+                player.loadVideo(track.youtubeVideoId, _playerState.value.currentPositionSeconds)
+            }
         }
     }
 
     fun detachYouTubePlayer() {
         activeYouTubePlayer = null
         isPlayerReady = false
+        com.example.musictube.utils.DiagnosticsLogger.logPlayer("detachYouTubePlayer", "Player detached from PlaybackManager")
+    }
+
+    fun onPlayerStateChange(state: PlayerConstants.PlayerState) {
+        com.example.musictube.utils.DiagnosticsLogger.logPlayer("onStateChange", state.name)
+        when (state) {
+            PlayerConstants.PlayerState.PLAYING -> {
+                _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
+            }
+            PlayerConstants.PlayerState.PAUSED -> {
+                _playerState.update { it.copy(playState = PlayState.PAUSED) }
+            }
+            PlayerConstants.PlayerState.BUFFERING -> {
+                _playerState.update { it.copy(playState = PlayState.BUFFERING) }
+            }
+            PlayerConstants.PlayerState.ENDED -> {
+                handleTrackEnded()
+            }
+            else -> {}
+        }
+    }
+
+    fun onCurrentSecond(second: Float) {
+        _playerState.update { it.copy(currentPositionSeconds = second) }
+    }
+
+    fun onVideoDuration(duration: Float) {
+        _playerState.update { it.copy(durationSeconds = duration) }
+    }
+
+    fun onPlayerError(error: PlayerConstants.PlayerError) {
+        com.example.musictube.utils.DiagnosticsLogger.logPlayer("onError", "${error.name} (Code: $error)")
+        val msg = when (error) {
+            PlayerConstants.PlayerError.VIDEO_NOT_PLAYABLE_IN_EMBEDDED_PLAYER ->
+                "Playback restricted on this device. Skipping to next track..."
+            PlayerConstants.PlayerError.VIDEO_NOT_FOUND ->
+                "Video not found on YouTube. Skipping to next track..."
+            else ->
+                "Playback error: ${error.name}"
+        }
+        _playerState.update { it.copy(playState = PlayState.ERROR, errorMessage = msg) }
+        scope.launch {
+            kotlinx.coroutines.delay(2000)
+            next()
+        }
     }
 
     fun playTrack(track: Track, newQueue: List<Track>? = null) {
@@ -164,31 +123,22 @@ class PlaybackManager(
                 currentTrack = track,
                 playState = PlayState.BUFFERING,
                 currentPositionSeconds = 0f,
-                durationSeconds = if (track.durationSeconds > 0) track.durationSeconds.toFloat() else 0f
+                durationSeconds = if (track.durationSeconds > 0) track.durationSeconds.toFloat() else 0f,
+                errorMessage = null
             )
         }
 
-        loadAndPlayVideo(track)
+        com.example.musictube.utils.DiagnosticsLogger.logPlayer("playTrack", "${track.title} [${track.youtubeVideoId}]")
+        val player = activeYouTubePlayer
+        if (player != null && isPlayerReady) {
+            com.example.musictube.utils.DiagnosticsLogger.logPlayer("playTrack", "player.loadVideo(${track.youtubeVideoId})")
+            player.loadVideo(track.youtubeVideoId, 0f)
+            _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
+        }
 
         // Record history
         scope.launch {
             repository.recordTrackPlayed(track)
-        }
-    }
-
-    private fun loadAndPlayVideo(track: Track) {
-        com.example.musictube.utils.DiagnosticsLogger.logPlayer("loadAndPlayVideo", "${track.title} [${track.youtubeVideoId}]")
-        val player = activeYouTubePlayer
-        if (player != null && isPlayerReady) {
-            com.example.musictube.utils.DiagnosticsLogger.logPlayer("player.loadVideo()", "Calling loadVideo(${track.youtubeVideoId})")
-            player.loadVideo(track.youtubeVideoId, 0f)
-            _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
-            pendingTrackToPlay = null
-        } else {
-            com.example.musictube.utils.DiagnosticsLogger.logPlayer("pendingTrackToPlay", "Player not ready yet, queuing: ${track.youtubeVideoId}")
-            pendingTrackToPlay = track
-            // Trigger player view creation and initialization
-            getSharedPlayerView()
         }
     }
 

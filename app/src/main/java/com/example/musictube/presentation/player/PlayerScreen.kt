@@ -62,6 +62,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -183,11 +184,15 @@ fun PlayerScreen(
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (playerState.isVideoVisible) {
-                        YouTubePlayerViewContainer(
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
+                    // YouTube player view stays active so toggling artwork does not interrupt playback
+                    YouTubePlayerViewContainer(
+                        videoId = track.youtubeVideoId,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .alpha(if (playerState.isVideoVisible) 1f else 0.001f)
+                    )
+
+                    if (!playerState.isVideoVisible) {
                         AsyncImage(
                             model = track.thumbnailUrl,
                             contentDescription = track.title,
