@@ -306,7 +306,7 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "MusicTube complies strictly with YouTube Terms of Service using official permitted IFrame player mechanics. Ripping, scraping or permanent audio/video extraction is prohibited.",
+                        text = "SoundBuzz complies strictly with YouTube Terms of Service using official permitted IFrame player mechanics. Ripping, scraping or permanent audio/video extraction is prohibited.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -91,7 +91,7 @@ fun HomeScreen(
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "MusicTube",
+                            text = "SoundBuzz",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.onBackground

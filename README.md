@@ -1,6 +1,6 @@
-# MusicTube — Modern Android Music Discovery & Streaming App
+# SoundBuzz — Modern Android Music Discovery & Streaming App
 
-A production-quality, responsive Android music application built with **Kotlin**, **Jetpack Compose**, **Material 3**, and **Clean Architecture (MVVM)**. MusicTube enables users to discover, organize, and stream music content sourced from YouTube using YouTube's permitted APIs and player mechanisms.
+A production-quality, responsive Android music application built with **Kotlin**, **Jetpack Compose**, **Material 3**, and **Clean Architecture (MVVM)**. SoundBuzz enables users to discover, organize, and stream music content sourced from YouTube using YouTube's permitted APIs and player mechanisms.
 
 ---
 
@@ -22,7 +22,7 @@ A production-quality, responsive Android music application built with **Kotlin**
 
 ## 1. Project Overview
 
-MusicTube offers a Spotify-like user experience powered by YouTube's vast catalog of music videos and audio tracks. It runs 100% serverless: all personalization, playlist storage, playback history, favorites, search history, and recommendation scoring are computed and maintained locally on the user's Android device.
+SoundBuzz offers a Spotify-like user experience powered by YouTube's vast catalog of music videos and audio tracks. It runs 100% serverless: all personalization, playlist storage, playback history, favorites, search history, and recommendation scoring are computed and maintained locally on the user's Android device.
 
 ---
 
@@ -97,7 +97,7 @@ MusicTube offers a Spotify-like user experience powered by YouTube's vast catalo
 
 ## 3. Architecture
 
-MusicTube follows standard Android Clean Architecture with MVVM:
+SoundBuzz follows standard Android Clean Architecture with MVVM:
 
 ```
 UI Layer (Jetpack Compose Screens & Components)
@@ -178,13 +178,13 @@ Local Data Layer (Room)        Remote Data Layer (Retrofit YouTube API)
    - **No scraping, audio ripping, or downloading** is performed, adhering 100% to YouTube's Developer Policies and Terms of Service.
    - The player supports play, pause, seek, duration updates, and track completion callbacks.
 3. **Graceful Fallback & Offline Catalog**:
-   - If no API key is supplied or when offline, MusicTube serves an extensive curated music catalog (`DefaultMusicCatalog`) across 17 genres with genuine YouTube video IDs so users can immediately hit play and enjoy music.
+   - If no API key is supplied or when offline, SoundBuzz serves an extensive curated music catalog (`DefaultMusicCatalog`) across 17 genres with genuine YouTube video IDs so users can immediately hit play and enjoy music.
 
 ---
 
 ## 6. Local Database (Room)
 
-MusicTube utilizes Room with 7 tables:
+SoundBuzz utilizes Room with 7 tables:
 1. `tracks`: Cached track metadata (id, videoId, title, artist, channel, thumbnailUrl, duration, category, viewCount).
 2. `playlists`: User-created playlist records (id, name, createdAt, updatedAt, thumbnail).
 3. `playlist_tracks`: Relational items linking tracks to playlists with position ordering.
@@ -197,7 +197,7 @@ MusicTube utilizes Room with 7 tables:
 
 ## 7. Recommendation System
 
-Since MusicTube operates without a centralized recommendation server, it runs an on-device weighted scoring engine (`RecommendationEngine`):
+Since SoundBuzz operates without a centralized recommendation server, it runs an on-device weighted scoring engine (`RecommendationEngine`):
 
 | Signal | Weight | Logic |
 |---|---|---|
@@ -218,7 +218,7 @@ The algorithm computes the cumulative score for available tracks and ranks the l
 You can configure your YouTube Data API v3 Key in either of two ways:
 
 ### Option A: In-App via Settings (Recommended)
-1. Launch MusicTube on your device or emulator.
+1. Launch SoundBuzz on your device or emulator.
 2. Navigate to the **Settings** tab.
 3. Under **YouTube Data API v3 Key**, enter your API key and tap **Save Key**.
 4. Search and trending charts will immediately begin querying YouTube Data API v3 live.
@@ -240,7 +240,7 @@ buildConfigField("String", "DEFAULT_YOUTUBE_API_KEY", "\"YOUR_YOUTUBE_API_KEY\""
 
 ### Steps:
 1. Open Android Studio.
-2. Select **Open** and choose the `D:\Projects\MusicTube` directory.
+2. Select **Open** and choose the `SoundBuzz` directory.
 3. Allow Gradle to sync dependencies.
 4. Select your connected Android device or emulator.
 5. Click **Run 'app'** (or press Shift + F10).
@@ -249,7 +249,7 @@ buildConfigField("String", "DEFAULT_YOUTUBE_API_KEY", "\"YOUR_YOUTUBE_API_KEY\""
 
 ## 10. Testing
 
-MusicTube includes unit tests covering:
+SoundBuzz includes unit tests covering:
 - **`RecommendationEngineTest`**: Validates weighted scoring rules (artist match +5, genre match +4, favorite artist +5, recent bonus +2, already played -1).
 - **`DurationUtilsTest`**: Validates ISO-8601 duration parsing (`PT3M45S` -> 225s) and formatting (`225s` -> `"3:45"`).
 - **`EntityMappingTest`**: Validates Room entity transformations to domain models and back.
@@ -263,5 +263,5 @@ To run tests:
 
 ## 11. Limitations & YouTube Compliance
 
-- **YouTube API Quotas**: YouTube Data API v3 enforces a default quota of 10,000 units per day. Search requests consume 100 units per call. MusicTube caches responses to reduce quota consumption. When the quota is exceeded or an API key is omitted, the app gracefully falls back to the curated local catalog without crashing.
-- **Playback Policy**: As mandated by YouTube's Terms of Service, background audio playback with the screen off or outside the YouTube player embed is not permitted. MusicTube plays media using the permitted official YouTube IFrame player embed and does not rip or extract raw streams.
+- **YouTube API Quotas**: YouTube Data API v3 enforces a default quota of 10,000 units per day. Search requests consume 100 units per call. SoundBuzz caches responses to reduce quota consumption. When the quota is exceeded or an API key is omitted, the app gracefully falls back to the curated local catalog without crashing.
+- **Playback Policy**: As mandated by YouTube's Terms of Service, background audio playback with the screen off or outside the YouTube player embed is not permitted. SoundBuzz plays media using the permitted official YouTube IFrame player embed and does not rip or extract raw streams.

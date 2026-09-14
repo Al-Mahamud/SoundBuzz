@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MusicTube"
+rootProject.name = "SoundBuzz"
 include(":app")
