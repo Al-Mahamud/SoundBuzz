@@ -1,12 +1,9 @@
 package com.example.musictube
 
 import android.Manifest
-import android.app.PictureInPictureParams
 import android.content.pm.PackageManager
-import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
-import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -23,8 +20,6 @@ import com.example.musictube.presentation.settings.ThemeMode
 import com.example.musictube.presentation.theme.MusicTubeTheme
 
 class MainActivity : ComponentActivity() {
-
-    private val isInPipMode = mutableStateOf(false)
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -54,31 +49,9 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.SYSTEM -> systemDark
             }
 
-            val inPip by isInPipMode
-
             MusicTubeTheme(darkTheme = isDark) {
-                MusicTubeApp(isInPipMode = inPip)
+                MusicTubeApp()
             }
         }
-    }
-
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-        val playerState = MusicTubeApplication.instance.playbackManager.playerState.value
-        if (playerState.isPlaying && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                val params = PictureInPictureParams.Builder()
-                    .setAspectRatio(Rational(16, 9))
-                    .build()
-                enterPictureInPictureMode(params)
-            } catch (e: Exception) {
-                com.example.musictube.utils.DiagnosticsLogger.logPlayer("PiP", "Error entering PiP: ${e.message}")
-            }
-        }
-    }
-
-    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
-        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        isInPipMode.value = isInPictureInPictureMode
     }
 }

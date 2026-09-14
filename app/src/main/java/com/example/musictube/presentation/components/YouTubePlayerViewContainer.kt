@@ -42,6 +42,7 @@ fun YouTubePlayerViewContainer(
         factory = { ctx ->
             YouTubePlayerView(ctx).apply {
                 enableAutomaticInitialization = false
+                enableBackgroundPlayback(true)
                 lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
 
                 val options = IFramePlayerOptions.Builder(ctx)

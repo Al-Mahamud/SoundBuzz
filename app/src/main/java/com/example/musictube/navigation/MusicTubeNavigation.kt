@@ -1,17 +1,17 @@
 package com.example.musictube.navigation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.unit.dp
-import com.example.musictube.presentation.components.YouTubePlayerViewContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -31,8 +31,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -60,7 +67,7 @@ sealed class Screen(val route: String, val label: String, val selectedIcon: Imag
 }
 
 @Composable
-fun MusicTubeApp(isInPipMode: Boolean = false) {
+fun MusicTubeApp() {
     val navController = rememberNavController()
     val playbackManager = MusicTubeApplication.instance.playbackManager
     val playerState by playbackManager.playerState.collectAsState()
@@ -68,7 +75,12 @@ fun MusicTubeApp(isInPipMode: Boolean = false) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination?.route
 
-    val isFullScreenPlayer = currentDestination?.startsWith("player/") == true
+    var isPlayerExpanded by rememberSaveable { mutableStateOf(false) }
+
+    // Intercept back button when player is full screen
+    BackHandler(enabled = isPlayerExpanded) {
+        isPlayerExpanded = false
+    }
 
     val bottomTabs = listOf(
         Screen.Home,
@@ -77,9 +89,17 @@ fun MusicTubeApp(isInPipMode: Boolean = false) {
         Screen.Settings
     )
 
+    val configuration = LocalConfiguration.current
+    val screenHeight = configuration.screenHeightDp.dp
+    val playerOffsetY by animateDpAsState(
+        targetValue = if (isPlayerExpanded) 0.dp else (screenHeight + 150.dp),
+        animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+        label = "playerSheetOffset"
+    )
+
     Scaffold(
         bottomBar = {
-            if (!isFullScreenPlayer && !isInPipMode) {
+            if (!isPlayerExpanded) {
                 Column {
                     // Persistent Mini Player above bottom navigation
                     AnimatedVisibility(
@@ -89,11 +109,7 @@ fun MusicTubeApp(isInPipMode: Boolean = false) {
                     ) {
                         MiniPlayer(
                             playerState = playerState,
-                            onExpandClick = {
-                                playerState.currentTrack?.let { track ->
-                                    navController.navigate("player/${track.youtubeVideoId}")
-                                }
-                            },
+                            onExpandClick = { isPlayerExpanded = true },
                             onPlayPauseClick = { playbackManager.togglePlayPause() },
                             onNextClick = { playbackManager.next() }
                         )
@@ -141,15 +157,9 @@ fun MusicTubeApp(isInPipMode: Boolean = false) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(if (isInPipMode) PaddingValues(0.dp) else innerPadding)
+                .padding(innerPadding)
         ) {
-            if (isInPipMode && !isFullScreenPlayer && playerState.currentTrack != null) {
-                YouTubePlayerViewContainer(
-                    videoId = playerState.currentTrack!!.youtubeVideoId,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                NavHost(
+            NavHost(
                 navController = navController,
                 startDestination = Screen.Home.route
             ) {
@@ -163,8 +173,8 @@ fun MusicTubeApp(isInPipMode: Boolean = false) {
                             val encoded = URLEncoder.encode(categoryName, "UTF-8")
                             navController.navigate("category/$encoded")
                         },
-                        onNavigateToPlayer = { videoId ->
-                            navController.navigate("player/$videoId")
+                        onNavigateToPlayer = {
+                            isPlayerExpanded = true
                         }
                     )
                 }
@@ -175,8 +185,8 @@ fun MusicTubeApp(isInPipMode: Boolean = false) {
                             val encoded = URLEncoder.encode(artistName, "UTF-8")
                             navController.navigate("artist/$encoded")
                         },
-                        onNavigateToPlayer = { videoId ->
-                            navController.navigate("player/$videoId")
+                        onNavigateToPlayer = {
+                            isPlayerExpanded = true
                         }
                     )
                 }
@@ -190,8 +200,8 @@ fun MusicTubeApp(isInPipMode: Boolean = false) {
                             val encoded = URLEncoder.encode(artistName, "UTF-8")
                             navController.navigate("artist/$encoded")
                         },
-                        onNavigateToPlayer = { videoId ->
-                            navController.navigate("player/$videoId")
+                        onNavigateToPlayer = {
+                            isPlayerExpanded = true
                         }
                     )
                 }
@@ -201,27 +211,13 @@ fun MusicTubeApp(isInPipMode: Boolean = false) {
                 }
 
                 composable(
-                    route = "player/{videoId}",
-                    arguments = listOf(navArgument("videoId") { type = NavType.StringType })
-                ) {
-                    PlayerScreen(
-                        isInPipMode = isInPipMode,
-                        onNavigateBack = { navController.popBackStack() },
-                        onNavigateToArtist = { artistName ->
-                            val encoded = URLEncoder.encode(artistName, "UTF-8")
-                            navController.navigate("artist/$encoded")
-                        }
-                    )
-                }
-
-                composable(
                     route = "playlist/{playlistId}",
                     arguments = listOf(navArgument("playlistId") { type = NavType.LongType })
                 ) {
                     PlaylistDetailScreen(
                         onNavigateBack = { navController.popBackStack() },
-                        onNavigateToPlayer = { videoId ->
-                            navController.navigate("player/$videoId")
+                        onNavigateToPlayer = {
+                            isPlayerExpanded = true
                         }
                     )
                 }
@@ -232,8 +228,8 @@ fun MusicTubeApp(isInPipMode: Boolean = false) {
                 ) {
                     ArtistDetailScreen(
                         onNavigateBack = { navController.popBackStack() },
-                        onNavigateToPlayer = { videoId ->
-                            navController.navigate("player/$videoId")
+                        onNavigateToPlayer = {
+                            isPlayerExpanded = true
                         }
                     )
                 }
@@ -244,8 +240,8 @@ fun MusicTubeApp(isInPipMode: Boolean = false) {
                 ) {
                     CategoryDetailScreen(
                         onNavigateBack = { navController.popBackStack() },
-                        onNavigateToPlayer = { videoId ->
-                            navController.navigate("player/$videoId")
+                        onNavigateToPlayer = {
+                            isPlayerExpanded = true
                         },
                         onNavigateToArtist = { artistName ->
                             val encoded = URLEncoder.encode(artistName, "UTF-8")
@@ -256,5 +252,25 @@ fun MusicTubeApp(isInPipMode: Boolean = false) {
             }
         }
     }
-}
+
+    // Persistent Expandable Full Screen Player
+    // Lives at the app root level so YouTubePlayerView is never released during screen navigation!
+    if (playerState.currentTrack != null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .offset(y = playerOffsetY)
+                .alpha(if (isPlayerExpanded) 1f else 0.001f)
+                .zIndex(if (isPlayerExpanded) 10f else -1f)
+        ) {
+            PlayerScreen(
+                onNavigateBack = { isPlayerExpanded = false },
+                onNavigateToArtist = { artistName ->
+                    isPlayerExpanded = false
+                    val encoded = URLEncoder.encode(artistName, "UTF-8")
+                    navController.navigate("artist/$encoded")
+                }
+            )
+        }
+    }
 }
