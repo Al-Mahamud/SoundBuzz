@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -97,6 +98,7 @@ fun PlayerScreen(
     var sliderSeekPosition by remember { mutableFloatStateOf(0f) }
     var showQueueBottomSheet by remember { mutableStateOf(false) }
     var showAddToPlaylistDialog by remember { mutableStateOf(false) }
+    var showDiagnosticsSheet by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -126,6 +128,13 @@ fun PlayerScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showDiagnosticsSheet = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "Diagnostics & API Response",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     IconButton(onClick = { viewModel.toggleVideoVisibility() }) {
                         Icon(
                             imageVector = if (playerState.isVideoVisible) Icons.Outlined.Image else Icons.Default.SmartDisplay,
@@ -520,6 +529,13 @@ fun PlayerScreen(
                 viewModel.createPlaylist(name)
                 showAddToPlaylistDialog = false
             }
+        )
+    }
+
+    // Diagnostics & API Response Bottom Sheet
+    if (showDiagnosticsSheet) {
+        com.example.musictube.presentation.components.DiagnosticsSheet(
+            onDismiss = { showDiagnosticsSheet = false }
         )
     }
 }

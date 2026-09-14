@@ -40,8 +40,14 @@ class PlaybackManager(
     private var isPlayerReady = false
     private var pendingTrackToPlay: Track? = null
 
-    private val _sharedPlayerView: YouTubePlayerView by lazy {
-        YouTubePlayerView(context).apply {
+    private var _sharedPlayerView: YouTubePlayerView? = null
+
+    fun getSharedPlayerView(activityContext: Context? = null): YouTubePlayerView {
+        val existing = _sharedPlayerView
+        if (existing != null) return existing
+
+        val ctx = activityContext ?: context
+        return YouTubePlayerView(ctx).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -55,17 +61,18 @@ class PlaybackManager(
                 .build()
 
             initialize(playerListener, options)
+            _sharedPlayerView = this
         }
     }
-
-    fun getSharedPlayerView(): YouTubePlayerView = _sharedPlayerView
 
     private val playerListener = object : AbstractYouTubePlayerListener() {
         override fun onReady(youTubePlayer: YouTubePlayer) {
             isPlayerReady = true
             activeYouTubePlayer = youTubePlayer
+            com.example.musictube.utils.DiagnosticsLogger.logPlayer("onReady() fired", "activeYouTubePlayer initialized")
             val trackToPlay = pendingTrackToPlay ?: _playerState.value.currentTrack
             if (trackToPlay != null) {
+                com.example.musictube.utils.DiagnosticsLogger.logPlayer("onReady -> loadVideo", "videoId: ${trackToPlay.youtubeVideoId}")
                 youTubePlayer.loadVideo(trackToPlay.youtubeVideoId, _playerState.value.currentPositionSeconds)
                 _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
                 pendingTrackToPlay = null
@@ -73,6 +80,7 @@ class PlaybackManager(
         }
 
         override fun onStateChange(youTubePlayer: YouTubePlayer, state: PlayerConstants.PlayerState) {
+            com.example.musictube.utils.DiagnosticsLogger.logPlayer("onStateChange", state.name)
             when (state) {
                 PlayerConstants.PlayerState.PLAYING -> {
                     _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
@@ -99,6 +107,7 @@ class PlaybackManager(
         }
 
         override fun onError(youTubePlayer: YouTubePlayer, error: PlayerConstants.PlayerError) {
+            com.example.musictube.utils.DiagnosticsLogger.logPlayer("onError", "${error.name} (Code: $error)")
             val msg = when (error) {
                 PlayerConstants.PlayerError.VIDEO_NOT_PLAYABLE_IN_EMBEDDED_PLAYER ->
                     "Playback restricted on this device. Skipping to next track..."
@@ -168,12 +177,15 @@ class PlaybackManager(
     }
 
     private fun loadAndPlayVideo(track: Track) {
+        com.example.musictube.utils.DiagnosticsLogger.logPlayer("loadAndPlayVideo", "${track.title} [${track.youtubeVideoId}]")
         val player = activeYouTubePlayer
         if (player != null && isPlayerReady) {
+            com.example.musictube.utils.DiagnosticsLogger.logPlayer("player.loadVideo()", "Calling loadVideo(${track.youtubeVideoId})")
             player.loadVideo(track.youtubeVideoId, 0f)
             _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
             pendingTrackToPlay = null
         } else {
+            com.example.musictube.utils.DiagnosticsLogger.logPlayer("pendingTrackToPlay", "Player not ready yet, queuing: ${track.youtubeVideoId}")
             pendingTrackToPlay = track
             // Trigger player view creation and initialization
             getSharedPlayerView()

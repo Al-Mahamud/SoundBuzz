@@ -29,6 +29,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -67,6 +68,7 @@ fun SettingsScreen(
     var showLicensesDialog by remember { mutableStateOf(false) }
     var showClearHistoryDialog by remember { mutableStateOf(false) }
     var showClearCacheDialog by remember { mutableStateOf(false) }
+    var showDiagnosticsSheet by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -225,12 +227,27 @@ fun SettingsScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        onClick = { viewModel.updateApiKey(apiKeyInput) },
-                        modifier = Modifier.align(Alignment.End)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Save Key")
+                        OutlinedButton(
+                            onClick = { showDiagnosticsSheet = true }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("View API Logs")
+                        }
+                        Button(
+                            onClick = { viewModel.updateApiKey(apiKeyInput) }
+                        ) {
+                            Text("Save Key")
+                        }
                     }
                 }
             }
@@ -382,6 +399,12 @@ fun SettingsScreen(
                     Text("Close")
                 }
             }
+        )
+    }
+
+    if (showDiagnosticsSheet) {
+        com.example.musictube.presentation.components.DiagnosticsSheet(
+            onDismiss = { showDiagnosticsSheet = false }
         )
     }
 }
