@@ -84,6 +84,7 @@ import com.example.musictube.utils.DurationUtils
 @Composable
 fun PlayerScreen(
     viewModel: PlayerViewModel = viewModel(),
+    isInPipMode: Boolean = false,
     onNavigateBack: () -> Unit,
     onNavigateToArtist: (String) -> Unit
 ) {
@@ -94,6 +95,16 @@ fun PlayerScreen(
     val playlists by viewModel.playlists.collectAsState()
 
     val track = playerState.currentTrack
+
+    if (isInPipMode) {
+        if (track != null) {
+            YouTubePlayerViewContainer(
+                videoId = track.youtubeVideoId,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        return
+    }
 
     var isUserSeeking by remember { mutableStateOf(false) }
     var sliderSeekPosition by remember { mutableFloatStateOf(0f) }

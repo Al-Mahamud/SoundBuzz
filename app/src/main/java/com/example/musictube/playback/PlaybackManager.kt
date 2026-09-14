@@ -143,6 +143,9 @@ class PlaybackManager(
             _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
         }
 
+        // Start persistent foreground media service
+        PlaybackService.startService(context)
+
         // Record history
         scope.launch {
             repository.recordTrackPlayed(track)
@@ -262,6 +265,7 @@ class PlaybackManager(
         _queue.value = emptyList()
         _currentQueueIndex.value = -1
         _playerState.update { it.copy(currentTrack = null, playState = PlayState.IDLE) }
+        PlaybackService.stopService(context)
     }
 
     fun shuffleQueue() {

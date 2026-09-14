@@ -7,6 +7,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.musictube.MusicTubeApplication
 import com.example.musictube.playback.PlaybackManager
@@ -27,12 +29,20 @@ fun YouTubePlayerViewContainer(
     var activePlayer by remember { mutableStateOf<YouTubePlayer?>(null) }
     var loadedVideoId by remember { mutableStateOf<String?>(null) }
 
+    val lifecycleObserver = remember {
+        object : DefaultLifecycleObserver {
+            override fun onDestroy(owner: LifecycleOwner) {
+                playbackManager.detachYouTubePlayer()
+            }
+        }
+    }
+
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
             YouTubePlayerView(ctx).apply {
                 enableAutomaticInitialization = false
-                lifecycleOwner.lifecycle.addObserver(this)
+                lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
 
                 val options = IFramePlayerOptions.Builder(ctx)
                     .controls(1)
@@ -77,7 +87,7 @@ fun YouTubePlayerViewContainer(
         },
         onRelease = { playerView ->
             DiagnosticsLogger.logPlayer("onRelease", "Releasing YouTubePlayerView")
-            lifecycleOwner.lifecycle.removeObserver(playerView)
+            lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
             playbackManager.detachYouTubePlayer()
             playerView.release()
         }

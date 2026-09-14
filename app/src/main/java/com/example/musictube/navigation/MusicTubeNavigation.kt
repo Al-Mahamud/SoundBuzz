@@ -6,6 +6,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.draw.alpha
@@ -59,7 +60,7 @@ sealed class Screen(val route: String, val label: String, val selectedIcon: Imag
 }
 
 @Composable
-fun MusicTubeApp() {
+fun MusicTubeApp(isInPipMode: Boolean = false) {
     val navController = rememberNavController()
     val playbackManager = MusicTubeApplication.instance.playbackManager
     val playerState by playbackManager.playerState.collectAsState()
@@ -78,7 +79,7 @@ fun MusicTubeApp() {
 
     Scaffold(
         bottomBar = {
-            if (!isFullScreenPlayer) {
+            if (!isFullScreenPlayer && !isInPipMode) {
                 Column {
                     // Persistent Mini Player above bottom navigation
                     AnimatedVisibility(
@@ -140,9 +141,15 @@ fun MusicTubeApp() {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(if (isInPipMode) PaddingValues(0.dp) else innerPadding)
         ) {
-            NavHost(
+            if (isInPipMode && !isFullScreenPlayer && playerState.currentTrack != null) {
+                YouTubePlayerViewContainer(
+                    videoId = playerState.currentTrack!!.youtubeVideoId,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                NavHost(
                 navController = navController,
                 startDestination = Screen.Home.route
             ) {
@@ -198,6 +205,7 @@ fun MusicTubeApp() {
                     arguments = listOf(navArgument("videoId") { type = NavType.StringType })
                 ) {
                     PlayerScreen(
+                        isInPipMode = isInPipMode,
                         onNavigateBack = { navController.popBackStack() },
                         onNavigateToArtist = { artistName ->
                             val encoded = URLEncoder.encode(artistName, "UTF-8")
@@ -248,4 +256,5 @@ fun MusicTubeApp() {
             }
         }
     }
+}
 }
