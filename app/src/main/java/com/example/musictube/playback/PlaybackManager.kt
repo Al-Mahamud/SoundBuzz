@@ -51,18 +51,10 @@ class PlaybackManager(
             val options = IFramePlayerOptions.Builder()
                 .controls(1)
                 .rel(0)
+                .autoplay(1)
                 .build()
 
-            initialize(
-                object : AbstractYouTubePlayerListener() {
-                    override fun onReady(youTubePlayer: YouTubePlayer) {
-                        attachYouTubePlayer(youTubePlayer)
-                    }
-                },
-                options
-            )
-
-            addYouTubePlayerListener(playerListener)
+            initialize(playerListener, options)
         }
     }
 
@@ -72,8 +64,10 @@ class PlaybackManager(
         override fun onReady(youTubePlayer: YouTubePlayer) {
             isPlayerReady = true
             activeYouTubePlayer = youTubePlayer
-            pendingTrackToPlay?.let { track ->
-                loadAndPlayVideo(track)
+            val trackToPlay = pendingTrackToPlay ?: _playerState.value.currentTrack
+            if (trackToPlay != null) {
+                youTubePlayer.loadVideo(trackToPlay.youtubeVideoId, _playerState.value.currentPositionSeconds)
+                _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
                 pendingTrackToPlay = null
             }
         }
@@ -81,7 +75,7 @@ class PlaybackManager(
         override fun onStateChange(youTubePlayer: YouTubePlayer, state: PlayerConstants.PlayerState) {
             when (state) {
                 PlayerConstants.PlayerState.PLAYING -> {
-                    _playerState.update { it.copy(playState = PlayState.PLAYING) }
+                    _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
                 }
                 PlayerConstants.PlayerState.PAUSED -> {
                     _playerState.update { it.copy(playState = PlayState.PAUSED) }
@@ -105,7 +99,19 @@ class PlaybackManager(
         }
 
         override fun onError(youTubePlayer: YouTubePlayer, error: PlayerConstants.PlayerError) {
-            _playerState.update { it.copy(playState = PlayState.ERROR) }
+            val msg = when (error) {
+                PlayerConstants.PlayerError.VIDEO_NOT_PLAYABLE_IN_EMBEDDED_PLAYER ->
+                    "Playback restricted on this device. Skipping to next track..."
+                PlayerConstants.PlayerError.VIDEO_NOT_FOUND ->
+                    "Video not found on YouTube. Skipping to next track..."
+                else ->
+                    "Playback error: ${error.name}"
+            }
+            _playerState.update { it.copy(playState = PlayState.ERROR, errorMessage = msg) }
+            scope.launch {
+                kotlinx.coroutines.delay(2000)
+                next()
+            }
         }
     }
 
@@ -114,13 +120,11 @@ class PlaybackManager(
     fun attachYouTubePlayer(player: YouTubePlayer) {
         activeYouTubePlayer = player
         isPlayerReady = true
-        _playerState.value.currentTrack?.let { track ->
-            // If already playing or paused, resume or load video
-            if (_playerState.value.playState == PlayState.PLAYING) {
-                player.loadVideo(track.youtubeVideoId, _playerState.value.currentPositionSeconds)
-            } else {
-                player.cueVideo(track.youtubeVideoId, _playerState.value.currentPositionSeconds)
-            }
+        val trackToPlay = pendingTrackToPlay ?: _playerState.value.currentTrack
+        if (trackToPlay != null) {
+            player.loadVideo(trackToPlay.youtubeVideoId, _playerState.value.currentPositionSeconds)
+            _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
+            pendingTrackToPlay = null
         }
     }
 
@@ -167,9 +171,12 @@ class PlaybackManager(
         val player = activeYouTubePlayer
         if (player != null && isPlayerReady) {
             player.loadVideo(track.youtubeVideoId, 0f)
-            _playerState.update { it.copy(playState = PlayState.PLAYING) }
+            _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
+            pendingTrackToPlay = null
         } else {
             pendingTrackToPlay = track
+            // Trigger player view creation and initialization
+            getSharedPlayerView()
         }
     }
 

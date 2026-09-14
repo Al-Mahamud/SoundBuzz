@@ -142,17 +142,6 @@ fun MusicTubeApp() {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Persistent background YouTube Player to keep playback active across the app
-            if (!isFullScreenPlayer || !playerState.isVideoVisible) {
-                Box(
-                    modifier = Modifier
-                        .size(1.dp)
-                        .alpha(0.001f)
-                ) {
-                    YouTubePlayerViewContainer()
-                }
-            }
-
             NavHost(
                 navController = navController,
                 startDestination = Screen.Home.route

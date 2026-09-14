@@ -22,7 +22,8 @@ data class PlayerState(
     val durationSeconds: Float = 0f,
     val isShuffleEnabled: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.OFF,
-    val isVideoVisible: Boolean = false
+    val isVideoVisible: Boolean = true,
+    val errorMessage: String? = null
 ) {
     val isPlaying: Boolean
         get() = playState == PlayState.PLAYING

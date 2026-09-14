@@ -236,6 +236,24 @@ fun PlayerScreen(
                     }
                 }
 
+                // Error message banner if any
+                if (!playerState.errorMessage.isNullOrBlank()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = playerState.errorMessage.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+
                 // Seekbar / Slider
                 Column(modifier = Modifier.fillMaxWidth()) {
                     val currentPos = if (isUserSeeking) sliderSeekPosition else playerState.currentPositionSeconds
