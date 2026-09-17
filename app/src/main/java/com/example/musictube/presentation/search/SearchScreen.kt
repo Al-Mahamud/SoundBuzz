@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
@@ -23,6 +24,10 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import coil.compose.AsyncImage
+import com.example.musictube.domain.model.Artist
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,7 +65,9 @@ fun SearchScreen(
     onNavigateToPlayer: (String) -> Unit
 ) {
     val query by viewModel.query.collectAsState()
+    val selectedFilter by viewModel.selectedFilter.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
+    val artistResults by viewModel.artistResults.collectAsState()
     val recentSearches by viewModel.recentSearches.collectAsState()
     val playlists by viewModel.playlists.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -82,7 +89,7 @@ fun SearchScreen(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { viewModel.onQueryChange(it) },
-                    placeholder = { Text("Search music, artists, albums...") },
+                    placeholder = { Text("Search music, artists, videos...") },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.Search,
@@ -111,6 +118,21 @@ fun SearchScreen(
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+
+            // Search Filter Mode Chips (All, Songs, Artists, Videos)
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(bottom = 6.dp)
+            ) {
+                items(SearchFilter.values()) { filter ->
+                    FilterChip(
+                        selected = selectedFilter == filter,
+                        onClick = { viewModel.setFilter(filter) },
+                        label = { Text(filter.label) }
+                    )
+                }
             }
 
             // Quick Category Chips
@@ -150,7 +172,7 @@ fun SearchScreen(
                             onRetry = { viewModel.retrySearch() }
                         )
                     }
-                    query.isNotBlank() && searchResults.isEmpty() && !isLoading -> {
+                    query.isNotBlank() && searchResults.isEmpty() && artistResults.isEmpty() && !isLoading -> {
                         EmptyStateView(
                             message = "No music found. Try searching with another name."
                         )
@@ -224,22 +246,57 @@ fun SearchScreen(
                         }
                     }
                     else -> {
-                        // Display Search Results
+                        // Display Search Results & Artists
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(bottom = 90.dp)
                         ) {
-                            items(searchResults) { track ->
-                                TrackItemRow(
-                                    track = track,
-                                    onTrackClick = {
-                                        viewModel.playTrack(track, searchResults)
-                                        onNavigateToPlayer(track.youtubeVideoId)
-                                    },
-                                    onMoreOptionsClick = {
-                                        selectedTrackForMenu = track
+                            if (selectedFilter == SearchFilter.ARTISTS) {
+                                items(artistResults) { artist ->
+                                    ArtistItemRow(
+                                        artist = artist,
+                                        onClick = { onNavigateToArtist(artist.name) }
+                                    )
+                                }
+                            } else {
+                                if (artistResults.isNotEmpty() && selectedFilter == SearchFilter.ALL) {
+                                    item {
+                                        Text(
+                                            text = "Artists",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                        )
                                     }
-                                )
+                                    items(artistResults) { artist ->
+                                        ArtistItemRow(
+                                            artist = artist,
+                                            onClick = { onNavigateToArtist(artist.name) }
+                                        )
+                                    }
+                                    if (searchResults.isNotEmpty()) {
+                                        item {
+                                            Text(
+                                                text = "Tracks & Videos",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                items(searchResults) { track ->
+                                    TrackItemRow(
+                                        track = track,
+                                        onTrackClick = {
+                                            viewModel.playTrack(track, searchResults)
+                                            onNavigateToPlayer(track.youtubeVideoId)
+                                        },
+                                        onMoreOptionsClick = {
+                                            selectedTrackForMenu = track
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -282,5 +339,47 @@ fun SearchScreen(
                 selectedTrackForPlaylist = null
             }
         )
+    }
+}
+
+@Composable
+fun ArtistItemRow(
+    artist: Artist,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AsyncImage(
+            model = artist.imageUrl,
+            contentDescription = artist.name,
+            modifier = Modifier
+                .size(52.dp)
+                .clip(CircleShape),
+            contentScale = ContentScale.Crop
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = artist.name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = artist.subscriberCount ?: "Artist",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }

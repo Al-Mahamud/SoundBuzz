@@ -111,7 +111,8 @@ fun MusicTubeApp() {
                             playerState = playerState,
                             onExpandClick = { isPlayerExpanded = true },
                             onPlayPauseClick = { playbackManager.togglePlayPause() },
-                            onNextClick = { playbackManager.next() }
+                            onNextClick = { playbackManager.next() },
+                            onCloseClick = { playbackManager.stopAndDismiss() }
                         )
                     }
 

@@ -155,6 +155,16 @@ fun PlayerScreen(
                             tint = if (playerState.isVideoVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    IconButton(onClick = {
+                        viewModel.stopAndDismiss()
+                        onNavigateBack()
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Stop and Close Song",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background

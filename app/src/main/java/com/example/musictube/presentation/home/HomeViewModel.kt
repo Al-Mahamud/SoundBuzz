@@ -117,6 +117,17 @@ class HomeViewModel(
                     }
                 }
         }
+
+        // Collect dynamic YouTube Music categories from InnerTube
+        viewModelScope.launch {
+            repository.getCategories()
+                .catch { /* ignore */ }
+                .collect { list ->
+                    if (list.isNotEmpty()) {
+                        _uiState.update { it.copy(categories = list) }
+                    }
+                }
+        }
     }
 
     fun playTrack(track: Track, queue: List<Track>) {

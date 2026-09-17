@@ -40,7 +40,15 @@ class MusicRepository(
 
     private val PREF_API_KEY = "youtube_api_key"
 
-    fun getCategories(): List<Category> = DefaultMusicCatalog.categories
+    fun getCategories(): Flow<List<Category>> = flow {
+        var list = InnerTubeClient.browseMoodsAndGenres()
+        if (list.isEmpty()) {
+            list = DefaultMusicCatalog.categories
+        }
+        emit(list)
+    }.flowOn(Dispatchers.IO)
+
+    fun getDefaultCategories(): List<Category> = DefaultMusicCatalog.categories
 
     fun getPopularArtists(): List<Artist> = DefaultMusicCatalog.popularArtists
 
@@ -66,104 +74,153 @@ class MusicRepository(
     }
 
     fun getTrendingTracks(): Flow<List<Track>> = flow {
-        val apiKey = getActiveApiKey()
         var tracks: List<Track> = emptyList()
 
-        if (apiKey.isNotBlank()) {
-            try {
-                val response = NetworkClient.apiService.getPopularVideos(apiKey = apiKey)
-                val items = response.items.orEmpty()
-                if (items.isNotEmpty()) {
-                    tracks = items.mapNotNull { item ->
-                        val videoId = item.id ?: return@mapNotNull null
-                        val snippet = item.snippet ?: return@mapNotNull null
-                        val title = snippet.title ?: "Untitled"
-                        val artist = snippet.channelTitle ?: "Unknown Artist"
-                        val thumb = snippet.thumbnails?.bestUrl() ?: "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
-                        val durationSec = DurationUtils.parseIsoDurationToSeconds(item.contentDetails?.duration)
-                        val durationStr = DurationUtils.formatSecondsToTime(durationSec)
-                        val views = item.statistics?.viewCount?.toLongOrNull() ?: 0L
-
-                        Track(
-                            id = videoId,
-                            youtubeVideoId = videoId,
-                            title = title,
-                            artist = artist,
-                            channel = artist,
-                            thumbnailUrl = thumb,
-                            duration = durationStr,
-                            durationSeconds = durationSec,
-                            category = "Trending",
-                            viewCount = views,
-                            publishedAt = snippet.publishedAt.orEmpty()
-                        )
-                    }
-                    // Cache to database
-                    trackDao.insertTracks(tracks.map { TrackEntity.fromDomain(it) })
-                }
-            } catch (e: Exception) {
-                // Fallback to local catalog
+        // 1. Primary: InnerTube API
+        try {
+            tracks = InnerTubeClient.getTrendingTracks()
+            if (tracks.isNotEmpty()) {
+                trackDao.insertTracks(tracks.map { TrackEntity.fromDomain(it) })
             }
+        } catch (e: Exception) {
+            // fallback
         }
 
+        // 2. Secondary fallback: YouTube Data API v3
         if (tracks.isEmpty()) {
-            // Curated trending selection
-            tracks = DefaultMusicCatalog.catalogTracks.take(8)
-        }
-
-        // Attach favorite status
-        val favIds = favoriteDao.getAllFavoriteVideoIdsDirect().toSet()
-        emit(tracks.map { it.copy(isFavorite = favIds.contains(it.youtubeVideoId)) })
-    }.flowOn(Dispatchers.IO)
-
-    fun getPopularTracks(): Flow<List<Track>> = flow {
-        val favIds = favoriteDao.getAllFavoriteVideoIdsDirect().toSet()
-        val popular = DefaultMusicCatalog.catalogTracks.sortedByDescending { it.viewCount }.take(10)
-        emit(popular.map { it.copy(isFavorite = favIds.contains(it.youtubeVideoId)) })
-    }.flowOn(Dispatchers.IO)
-
-    fun getNewReleases(): Flow<List<Track>> = flow {
-        val favIds = favoriteDao.getAllFavoriteVideoIdsDirect().toSet()
-        val newReleases = DefaultMusicCatalog.catalogTracks.shuffled().take(8)
-        emit(newReleases.map { it.copy(isFavorite = favIds.contains(it.youtubeVideoId)) })
-    }.flowOn(Dispatchers.IO)
-
-    fun getCategoryTracks(categoryName: String): Flow<List<Track>> = flow {
-        val apiKey = getActiveApiKey()
-        var tracks: List<Track> = emptyList()
-
-        if (apiKey.isNotBlank()) {
-            try {
-                val query = "$categoryName music"
-                val searchResponse = NetworkClient.apiService.search(query = query, apiKey = apiKey)
-                val videoIds = searchResponse.items?.mapNotNull { it.id?.videoId }?.joinToString(",")
-                if (!videoIds.isNullOrBlank()) {
-                    val detailsResponse = NetworkClient.apiService.getVideoDetails(videoIds = videoIds, apiKey = apiKey)
-                    val items = detailsResponse.items.orEmpty()
+            val apiKey = getActiveApiKey()
+            if (apiKey.isNotBlank()) {
+                try {
+                    val response = NetworkClient.apiService.getPopularVideos(apiKey = apiKey)
+                    val items = response.items.orEmpty()
                     if (items.isNotEmpty()) {
                         tracks = items.mapNotNull { item ->
-                            val id = item.id ?: return@mapNotNull null
+                            val videoId = item.id ?: return@mapNotNull null
                             val snippet = item.snippet ?: return@mapNotNull null
+                            val title = snippet.title ?: "Untitled"
+                            val artist = snippet.channelTitle ?: "Unknown Artist"
+                            val thumb = snippet.thumbnails?.bestUrl() ?: "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
                             val durationSec = DurationUtils.parseIsoDurationToSeconds(item.contentDetails?.duration)
+                            val durationStr = DurationUtils.formatSecondsToTime(durationSec)
+                            val views = item.statistics?.viewCount?.toLongOrNull() ?: 0L
+
                             Track(
-                                id = id,
-                                youtubeVideoId = id,
-                                title = snippet.title ?: "Untitled",
-                                artist = snippet.channelTitle ?: "Unknown Artist",
-                                channel = snippet.channelTitle ?: "Unknown Artist",
-                                thumbnailUrl = snippet.thumbnails?.bestUrl() ?: "https://img.youtube.com/vi/$id/hqdefault.jpg",
-                                duration = DurationUtils.formatSecondsToTime(durationSec),
+                                id = videoId,
+                                youtubeVideoId = videoId,
+                                title = title,
+                                artist = artist,
+                                channel = artist,
+                                thumbnailUrl = thumb,
+                                duration = durationStr,
                                 durationSeconds = durationSec,
-                                category = categoryName,
-                                viewCount = item.statistics?.viewCount?.toLongOrNull() ?: 0L,
+                                category = "Trending",
+                                viewCount = views,
                                 publishedAt = snippet.publishedAt.orEmpty()
                             )
                         }
                         trackDao.insertTracks(tracks.map { TrackEntity.fromDomain(it) })
                     }
+                } catch (e: Exception) {
+                    // Fallback to local catalog
                 }
-            } catch (e: Exception) {
-                // Fallback
+            }
+        }
+
+        if (tracks.isEmpty()) {
+            tracks = DefaultMusicCatalog.catalogTracks.take(8)
+        }
+
+        val favIds = favoriteDao.getAllFavoriteVideoIdsDirect().toSet()
+        emit(tracks.map { it.copy(isFavorite = favIds.contains(it.youtubeVideoId)) })
+    }.flowOn(Dispatchers.IO)
+
+    fun getPopularTracks(): Flow<List<Track>> = flow {
+        var tracks: List<Track> = emptyList()
+        try {
+            tracks = InnerTubeClient.getPopularTracks()
+            if (tracks.isNotEmpty()) {
+                trackDao.insertTracks(tracks.map { TrackEntity.fromDomain(it) })
+            }
+        } catch (e: Exception) {
+            // fallback
+        }
+
+        if (tracks.isEmpty()) {
+            tracks = DefaultMusicCatalog.catalogTracks.sortedByDescending { it.viewCount }.take(10)
+        }
+
+        val favIds = favoriteDao.getAllFavoriteVideoIdsDirect().toSet()
+        emit(tracks.map { it.copy(isFavorite = favIds.contains(it.youtubeVideoId)) })
+    }.flowOn(Dispatchers.IO)
+
+    fun getNewReleases(): Flow<List<Track>> = flow {
+        var tracks: List<Track> = emptyList()
+        try {
+            tracks = InnerTubeClient.getNewReleases()
+            if (tracks.isNotEmpty()) {
+                trackDao.insertTracks(tracks.map { TrackEntity.fromDomain(it) })
+            }
+        } catch (e: Exception) {
+            // fallback
+        }
+
+        if (tracks.isEmpty()) {
+            tracks = DefaultMusicCatalog.catalogTracks.shuffled().take(8)
+        }
+
+        val favIds = favoriteDao.getAllFavoriteVideoIdsDirect().toSet()
+        emit(tracks.map { it.copy(isFavorite = favIds.contains(it.youtubeVideoId)) })
+    }.flowOn(Dispatchers.IO)
+
+    fun getCategoryTracks(categoryName: String): Flow<List<Track>> = flow {
+        var tracks: List<Track> = emptyList()
+
+        // 1. Primary: InnerTube API
+        try {
+            tracks = InnerTubeClient.getCategoryTracks(categoryName)
+            if (tracks.isNotEmpty()) {
+                trackDao.insertTracks(tracks.map { TrackEntity.fromDomain(it) })
+            }
+        } catch (e: Exception) {
+            // fallback
+        }
+
+        // 2. Secondary: YouTube Data API v3
+        if (tracks.isEmpty()) {
+            val apiKey = getActiveApiKey()
+            if (apiKey.isNotBlank()) {
+                try {
+                    val query = "$categoryName music"
+                    val searchResponse = NetworkClient.apiService.search(query = query, apiKey = apiKey)
+                    val videoIds = searchResponse.items?.mapNotNull { it.id?.videoId }?.joinToString(",")
+                    if (!videoIds.isNullOrBlank()) {
+                        val detailsResponse = NetworkClient.apiService.getVideoDetails(videoIds = videoIds, apiKey = apiKey)
+                        val items = detailsResponse.items.orEmpty()
+                        if (items.isNotEmpty()) {
+                            tracks = items.mapNotNull { item ->
+                                val id = item.id ?: return@mapNotNull null
+                                val snippet = item.snippet ?: return@mapNotNull null
+                                val durationSec = DurationUtils.parseIsoDurationToSeconds(item.contentDetails?.duration)
+                                Track(
+                                    id = id,
+                                    youtubeVideoId = id,
+                                    title = snippet.title ?: "Untitled",
+                                    artist = snippet.channelTitle ?: "Unknown Artist",
+                                    channel = snippet.channelTitle ?: "Unknown Artist",
+                                    thumbnailUrl = snippet.thumbnails?.bestUrl() ?: "https://img.youtube.com/vi/$id/hqdefault.jpg",
+                                    duration = DurationUtils.formatSecondsToTime(durationSec),
+                                    durationSeconds = durationSec,
+                                    category = categoryName,
+                                    viewCount = item.statistics?.viewCount?.toLongOrNull() ?: 0L,
+                                    publishedAt = snippet.publishedAt.orEmpty()
+                                )
+                            }
+                            trackDao.insertTracks(tracks.map { TrackEntity.fromDomain(it) })
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Fallback
+                }
             }
         }
 
@@ -178,7 +235,7 @@ class MusicRepository(
         emit(tracks.map { it.copy(isFavorite = favIds.contains(it.youtubeVideoId)) })
     }.flowOn(Dispatchers.IO)
 
-    fun searchTracks(query: String): Flow<List<Track>> = flow {
+    fun searchTracks(query: String, searchMode: String = "ALL"): Flow<List<Track>> = flow {
         if (query.isBlank()) {
             emit(emptyList())
             return@flow
@@ -188,7 +245,11 @@ class MusicRepository(
 
         // 1. Primary: InnerTube API (Unlimited, keyless, real-time YouTube music search)
         try {
-            tracks = InnerTubeClient.search(query)
+            tracks = when (searchMode.uppercase()) {
+                "AUDIO" -> InnerTubeClient.searchAudio(query)
+                "VIDEO" -> InnerTubeClient.searchVideo(query)
+                else -> InnerTubeClient.search(query)
+            }
             if (tracks.isNotEmpty()) {
                 trackDao.insertTracks(tracks.map { TrackEntity.fromDomain(it) })
             }
@@ -248,6 +309,27 @@ class MusicRepository(
         emit(tracks.map { it.copy(isFavorite = favIds.contains(it.youtubeVideoId)) })
     }.flowOn(Dispatchers.IO)
 
+    fun searchArtists(query: String): Flow<List<Artist>> = flow {
+        if (query.isBlank()) {
+            emit(emptyList())
+            return@flow
+        }
+
+        var artists: List<Artist> = emptyList()
+        try {
+            artists = InnerTubeClient.searchArtists(query)
+        } catch (e: Exception) {
+            // fallback
+        }
+
+        if (artists.isEmpty()) {
+            artists = DefaultMusicCatalog.popularArtists.filter {
+                it.name.contains(query, ignoreCase = true)
+            }
+        }
+        emit(artists)
+    }.flowOn(Dispatchers.IO)
+
     fun getLyrics(videoId: String): Flow<List<LyricLine>> = flow {
         val lyrics = InnerTubeClient.getLyrics(videoId)
         emit(lyrics)
@@ -264,20 +346,30 @@ class MusicRepository(
     }.flowOn(Dispatchers.IO)
 
     fun getArtistDetails(artistName: String): Flow<Artist?> = flow {
-        val matchedArtist = DefaultMusicCatalog.popularArtists.firstOrNull {
-            it.name.equals(artistName, ignoreCase = true) || it.id.equals(artistName, ignoreCase = true)
-        } ?: Artist(
-            id = artistName.lowercase().replace(" ", "_"),
-            name = artistName,
-            imageUrl = "https://img.youtube.com/vi/4NRXx6U8ABQ/hqdefault.jpg",
-            description = "Popular artist on MusicTube."
-        )
-
-        val artistTracks = DefaultMusicCatalog.catalogTracks.filter {
-            it.artist.contains(artistName, ignoreCase = true)
+        var artist: Artist? = null
+        try {
+            artist = InnerTubeClient.getArtistDetails(artistName)
+        } catch (e: Exception) {
+            // fallback
         }
 
-        emit(matchedArtist.copy(popularTracks = artistTracks))
+        if (artist == null) {
+            val matchedArtist = DefaultMusicCatalog.popularArtists.firstOrNull {
+                it.name.equals(artistName, ignoreCase = true) || it.id.equals(artistName, ignoreCase = true)
+            } ?: Artist(
+                id = artistName.lowercase().replace(" ", "_"),
+                name = artistName,
+                imageUrl = "https://img.youtube.com/vi/4NRXx6U8ABQ/hqdefault.jpg",
+                description = "Popular artist on SoundBuzz."
+            )
+
+            val artistTracks = DefaultMusicCatalog.catalogTracks.filter {
+                it.artist.contains(artistName, ignoreCase = true)
+            }
+            artist = matchedArtist.copy(popularTracks = artistTracks)
+        }
+
+        emit(artist)
     }.flowOn(Dispatchers.IO)
 
     fun getRelatedTracks(videoId: String): Flow<List<Track>> = flow {

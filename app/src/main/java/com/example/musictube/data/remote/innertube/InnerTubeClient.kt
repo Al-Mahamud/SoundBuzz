@@ -1,10 +1,13 @@
-﻿package com.example.musictube.data.remote.innertube
+package com.example.musictube.data.remote.innertube
 
+import com.example.musictube.domain.model.Artist
+import com.example.musictube.domain.model.Category
 import com.example.musictube.domain.model.LyricLine
 import com.example.musictube.domain.model.Track
 import com.example.musictube.utils.DiagnosticsLogger
 import com.example.musictube.utils.DurationUtils
 import com.google.gson.JsonArray
+import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
@@ -18,8 +21,16 @@ import java.util.regex.Pattern
 
 object InnerTubeClient {
 
-    private const val SEARCH_ENDPOINT = "https://www.youtube.com/youtubei/v1/search"
-    private const val PLAYER_ENDPOINT = "https://www.youtube.com/youtubei/v1/player"
+    private const val YT_SEARCH_ENDPOINT = "https://www.youtube.com/youtubei/v1/search"
+    private const val YT_PLAYER_ENDPOINT = "https://www.youtube.com/youtubei/v1/player"
+    private const val YTM_SEARCH_ENDPOINT = "https://music.youtube.com/youtubei/v1/search"
+    private const val YTM_BROWSE_ENDPOINT = "https://music.youtube.com/youtubei/v1/browse"
+
+    // YouTube Music Filter Params
+    private const val PARAM_SONGS = "EgWKAQIIAWoSEAUQDhAJEAQQAxAKEBAQFRAR"
+    private const val PARAM_ARTISTS = "EgWKAQIgAWoSEAUQDhAJEAQQAxAKEBAQFRAR"
+    private const val PARAM_VIDEOS = "EgWKAQIQAWoSEAUQDhAJEAQQAxAKEBAQFRAR"
+
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
     private val httpClient = OkHttpClient.Builder()
@@ -29,45 +40,530 @@ object InnerTubeClient {
 
     private val CAPTION_PATTERN = Pattern.compile("<p\\s+t=\"(\\d+)\"\\s+d=\"(\\d+)\"[^>]*>([\\s\\S]*?)</p>")
 
-    suspend fun search(query: String): List<Track> = withContext(Dispatchers.IO) {
+    private fun getWebRemixContext(): JsonObject {
+        return JsonObject().apply {
+            val client = JsonObject().apply {
+                addProperty("clientName", "WEB_REMIX")
+                addProperty("clientVersion", "1.20240101.01.00")
+                addProperty("hl", "en")
+                addProperty("gl", "US")
+            }
+            add("client", client)
+        }
+    }
+
+    private fun getAndroidContext(): JsonObject {
+        return JsonObject().apply {
+            val client = JsonObject().apply {
+                addProperty("clientName", "ANDROID")
+                addProperty("clientVersion", "20.10.38")
+                addProperty("hl", "en")
+                addProperty("gl", "US")
+            }
+            add("client", client)
+        }
+    }
+
+    // ==========================================
+    // 1. DYNAMIC CATEGORIES (Moods & Genres)
+    // ==========================================
+    suspend fun browseMoodsAndGenres(): List<Category> = withContext(Dispatchers.IO) {
+        try {
+            val payload = JsonObject().apply {
+                add("context", getWebRemixContext())
+                addProperty("browseId", "FEmusic_moods_and_genres")
+            }
+
+            val request = Request.Builder()
+                .url(YTM_BROWSE_ENDPOINT)
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0")
+                .header("Referer", "https://music.youtube.com/")
+                .header("Origin", "https://music.youtube.com")
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext emptyList()
+
+            val rawJson = response.body?.string().orEmpty()
+            val root = JsonParser.parseString(rawJson).asJsonObject
+            val contents = root.getAsJsonObject("contents")
+                ?.getAsJsonObject("singleColumnBrowseResultsRenderer")
+                ?.getAsJsonArray("tabs")
+                ?.get(0)?.asJsonObject
+                ?.getAsJsonObject("tabRenderer")
+                ?.getAsJsonObject("content")
+                ?.getAsJsonObject("sectionListRenderer")
+                ?.getAsJsonArray("contents") ?: return@withContext emptyList()
+
+            val categories = mutableListOf<Category>()
+            for (section in contents) {
+                val gridRenderer = section.asJsonObject.getAsJsonObject("gridRenderer") ?: continue
+                val items = gridRenderer.getAsJsonArray("items") ?: continue
+
+                for (item in items) {
+                    val button = item.asJsonObject.getAsJsonObject("musicNavigationButtonRenderer") ?: continue
+                    val name = extractText(button.getAsJsonObject("buttonText"))
+                    if (name.isBlank()) continue
+
+                    val colorLong = button.getAsJsonObject("solid")
+                        ?.get("leftStripeColor")?.asLong ?: 0xFF6200EE
+
+                    val id = name.lowercase().replace(Regex("[^a-z0-9]"), "_")
+                    categories.add(
+                        Category(
+                            id = id,
+                            name = name,
+                            description = "YouTube Music Category",
+                            primaryColor = colorLong
+                        )
+                    )
+                }
+            }
+            categories
+        } catch (e: Exception) {
+            DiagnosticsLogger.logApi("POST", YTM_BROWSE_ENDPOINT, -1, "InnerTube categories error: ${e.message}", "", false)
+            emptyList()
+        }
+    }
+
+    // ==========================================
+    // 2. AUDIO SEARCH (YouTube Music API)
+    // ==========================================
+    suspend fun searchAudio(query: String): List<Track> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
 
         try {
             val payload = JsonObject().apply {
-                val context = JsonObject().apply {
-                    val client = JsonObject().apply {
-                        addProperty("clientName", "ANDROID")
-                        addProperty("clientVersion", "20.10.38")
-                        addProperty("hl", "en")
-                        addProperty("gl", "US")
-                    }
-                    add("client", client)
-                }
-                add("context", context)
+                add("context", getWebRemixContext())
+                addProperty("query", query)
+                addProperty("params", PARAM_SONGS)
+            }
+
+            val request = Request.Builder()
+                .url(YTM_SEARCH_ENDPOINT)
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0")
+                .header("Referer", "https://music.youtube.com/")
+                .header("Origin", "https://music.youtube.com")
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext emptyList()
+
+            val rawJson = response.body?.string().orEmpty()
+            parseYtmTracksResponse(rawJson, "Audio")
+        } catch (e: Exception) {
+            DiagnosticsLogger.logApi("POST", YTM_SEARCH_ENDPOINT, -1, "InnerTube audio search error: ${e.message}", "", false)
+            emptyList()
+        }
+    }
+
+    // ==========================================
+    // 3. VIDEO SEARCH (YouTube Video API)
+    // ==========================================
+    suspend fun searchVideo(query: String): List<Track> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext emptyList()
+
+        try {
+            val payload = JsonObject().apply {
+                add("context", getAndroidContext())
                 addProperty("query", query)
             }
 
             val request = Request.Builder()
-                .url(SEARCH_ENDPOINT)
+                .url(YT_SEARCH_ENDPOINT)
                 .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                 .header("User-Agent", "com.google.android.youtube/20.10.38 (Linux; U; Android 14)")
                 .build()
 
             val response = httpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                DiagnosticsLogger.logApi("POST", SEARCH_ENDPOINT, response.code, "InnerTube search failed", "", false)
-                return@withContext emptyList()
-            }
+            if (!response.isSuccessful) return@withContext emptyList()
 
             val rawJson = response.body?.string().orEmpty()
-            parseSearchResponse(rawJson)
+            parseYtVideoResponse(rawJson)
         } catch (e: Exception) {
-            DiagnosticsLogger.logApi("POST", SEARCH_ENDPOINT, -1, "InnerTube error: ${e.message}", e.stackTraceToString(), false)
+            DiagnosticsLogger.logApi("POST", YT_SEARCH_ENDPOINT, -1, "InnerTube video search error: ${e.message}", "", false)
             emptyList()
         }
     }
 
-    private fun parseSearchResponse(jsonString: String): List<Track> {
+    // ==========================================
+    // 4. UNIFIED SEARCH (Audio priority with video fallback)
+    // ==========================================
+    suspend fun search(query: String): List<Track> {
+        val audioTracks = searchAudio(query)
+        if (audioTracks.isNotEmpty()) return audioTracks
+        return searchVideo(query)
+    }
+
+    // ==========================================
+    // 5. ARTIST-WISE SEARCH (YouTube Music API)
+    // ==========================================
+    suspend fun searchArtists(query: String): List<Artist> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext emptyList()
+
+        try {
+            val payload = JsonObject().apply {
+                add("context", getWebRemixContext())
+                addProperty("query", query)
+                addProperty("params", PARAM_ARTISTS)
+            }
+
+            val request = Request.Builder()
+                .url(YTM_SEARCH_ENDPOINT)
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0")
+                .header("Referer", "https://music.youtube.com/")
+                .header("Origin", "https://music.youtube.com")
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext emptyList()
+
+            val rawJson = response.body?.string().orEmpty()
+            val root = JsonParser.parseString(rawJson).asJsonObject
+            val contents = root.getAsJsonObject("contents")
+                ?.getAsJsonObject("tabbedSearchResultsRenderer")
+                ?.getAsJsonArray("tabs")
+                ?.get(0)?.asJsonObject
+                ?.getAsJsonObject("tabRenderer")
+                ?.getAsJsonObject("content")
+                ?.getAsJsonObject("sectionListRenderer")
+                ?.getAsJsonArray("contents") ?: return@withContext emptyList()
+
+            val artists = mutableListOf<Artist>()
+            for (sec in contents) {
+                val shelf = sec.asJsonObject.getAsJsonObject("musicShelfRenderer") ?: continue
+                val items = shelf.getAsJsonArray("contents") ?: continue
+
+                for (item in items) {
+                    val r = item.asJsonObject.getAsJsonObject("musicResponsiveListItemRenderer") ?: continue
+                    val flexCols = r.getAsJsonArray("flexColumns") ?: continue
+                    if (flexCols.size() < 1) continue
+
+                    val name = extractText(flexCols.get(0).asJsonObject.getAsJsonObject("musicResponsiveListItemFlexColumnRenderer")?.get("text"))
+                    if (name.isBlank()) continue
+
+                    val info = if (flexCols.size() > 1) {
+                        extractText(flexCols.get(1).asJsonObject.getAsJsonObject("musicResponsiveListItemFlexColumnRenderer")?.get("text"))
+                    } else ""
+
+                    val browseId = r.getAsJsonObject("navigationEndpoint")
+                        ?.getAsJsonObject("browseEndpoint")
+                        ?.get("browseId")?.asString ?: name.lowercase().replace(" ", "_")
+
+                    val thumb = extractBestThumbnail(
+                        r.getAsJsonObject("thumbnail")?.getAsJsonObject("musicThumbnailRenderer")?.getAsJsonObject("thumbnail"),
+                        ""
+                    )
+
+                    artists.add(
+                        Artist(
+                            id = browseId,
+                            name = name,
+                            imageUrl = thumb,
+                            subscriberCount = info.ifBlank { "Popular Artist" },
+                            description = "Artist on YouTube Music"
+                        )
+                    )
+                }
+            }
+            artists
+        } catch (e: Exception) {
+            DiagnosticsLogger.logApi("POST", YTM_SEARCH_ENDPOINT, -1, "InnerTube artist search error: ${e.message}", "", false)
+            emptyList()
+        }
+    }
+
+    // ==========================================
+    // 6. ARTIST DETAILS & TOP TRACKS
+    // ==========================================
+    suspend fun getArtistDetails(artistNameOrBrowseId: String): Artist? = withContext(Dispatchers.IO) {
+        if (artistNameOrBrowseId.isBlank()) return@withContext null
+
+        try {
+            var browseId = artistNameOrBrowseId
+            if (!browseId.startsWith("UC")) {
+                val found = searchArtists(artistNameOrBrowseId)
+                if (found.isNotEmpty()) {
+                    browseId = found.first().id
+                }
+            }
+
+            val payload = JsonObject().apply {
+                add("context", getWebRemixContext())
+                addProperty("browseId", browseId)
+            }
+
+            val request = Request.Builder()
+                .url(YTM_BROWSE_ENDPOINT)
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0")
+                .header("Referer", "https://music.youtube.com/")
+                .header("Origin", "https://music.youtube.com")
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext null
+
+            val rawJson = response.body?.string().orEmpty()
+            val root = JsonParser.parseString(rawJson).asJsonObject
+
+            val header = root.getAsJsonObject("header")?.getAsJsonObject("musicImmersiveHeaderRenderer")
+                ?: root.getAsJsonObject("header")?.getAsJsonObject("musicVisualHeaderRenderer")
+
+            val artistName = extractText(header?.get("title")).ifBlank { artistNameOrBrowseId }
+            val description = extractText(header?.get("description"))
+
+            val thumb = extractBestThumbnail(
+                header?.getAsJsonObject("thumbnail")?.getAsJsonObject("musicThumbnailRenderer")?.getAsJsonObject("thumbnail"),
+                ""
+            )
+
+            val topTracks = mutableListOf<Track>()
+            val contents = root.getAsJsonObject("contents")
+                ?.getAsJsonObject("singleColumnBrowseResultsRenderer")
+                ?.getAsJsonArray("tabs")
+                ?.get(0)?.asJsonObject
+                ?.getAsJsonObject("tabRenderer")
+                ?.getAsJsonObject("content")
+                ?.getAsJsonObject("sectionListRenderer")
+                ?.getAsJsonArray("contents")
+
+            if (contents != null && contents.size() > 0) {
+                val shelf = contents.get(0).asJsonObject.getAsJsonObject("musicShelfRenderer")
+                val items = shelf?.getAsJsonArray("contents")
+                if (items != null) {
+                    for (item in items) {
+                        val r = item.asJsonObject.getAsJsonObject("musicResponsiveListItemRenderer") ?: continue
+                        val flexCols = r.getAsJsonArray("flexColumns") ?: continue
+                        if (flexCols.size() < 1) continue
+
+                        val title = extractText(flexCols.get(0).asJsonObject.getAsJsonObject("musicResponsiveListItemFlexColumnRenderer")?.get("text"))
+                        if (title.isBlank()) continue
+
+                        val artistText = if (flexCols.size() > 1) {
+                            extractText(flexCols.get(1).asJsonObject.getAsJsonObject("musicResponsiveListItemFlexColumnRenderer")?.get("text"))
+                        } else artistName
+
+                        val videoId = r.getAsJsonObject("overlay")
+                            ?.getAsJsonObject("musicItemThumbnailOverlayRenderer")
+                            ?.getAsJsonObject("content")
+                            ?.getAsJsonObject("musicPlayButtonRenderer")
+                            ?.getAsJsonObject("playNavigationEndpoint")
+                            ?.getAsJsonObject("watchEndpoint")
+                            ?.get("videoId")?.asString
+                            ?: r.getAsJsonObject("navigationEndpoint")
+                                ?.getAsJsonObject("watchEndpoint")
+                                ?.get("videoId")?.asString
+                            ?: continue
+
+                        val itemThumb = extractBestThumbnail(
+                            r.getAsJsonObject("thumbnail")?.getAsJsonObject("musicThumbnailRenderer")?.getAsJsonObject("thumbnail"),
+                            videoId
+                        )
+
+                        topTracks.add(
+                            Track(
+                                id = videoId,
+                                youtubeVideoId = videoId,
+                                title = title,
+                                artist = artistText.ifBlank { artistName },
+                                channel = artistName,
+                                thumbnailUrl = itemThumb,
+                                duration = "3:30",
+                                durationSeconds = 210,
+                                category = "Audio / Music"
+                            )
+                        )
+                    }
+                }
+            }
+
+            Artist(
+                id = browseId,
+                name = artistName,
+                imageUrl = thumb.ifBlank { "https://img.youtube.com/vi/4NRXx6U8ABQ/hqdefault.jpg" },
+                description = description,
+                popularTracks = topTracks
+            )
+        } catch (e: Exception) {
+            DiagnosticsLogger.logApi("POST", YTM_BROWSE_ENDPOINT, -1, "InnerTube artist details error: ${e.message}", "", false)
+            null
+        }
+    }
+
+    // ==========================================
+    // 7. HOME SECTIONS: TRENDING, POPULAR & NEW RELEASES
+    // ==========================================
+    suspend fun getTrendingTracks(): List<Track> = withContext(Dispatchers.IO) {
+        val tracks = searchAudio("Trending Top Hits")
+        if (tracks.isNotEmpty()) return@withContext tracks
+        searchVideo("Trending Music 2026")
+    }
+
+    suspend fun getPopularTracks(): List<Track> = withContext(Dispatchers.IO) {
+        val tracks = searchAudio("Popular Music Hits")
+        if (tracks.isNotEmpty()) return@withContext tracks
+        searchVideo("Global Top 50 Music")
+    }
+
+    suspend fun getNewReleases(): List<Track> = withContext(Dispatchers.IO) {
+        try {
+            val payload = JsonObject().apply {
+                add("context", getWebRemixContext())
+                addProperty("browseId", "FEmusic_new_releases")
+            }
+
+            val request = Request.Builder()
+                .url(YTM_BROWSE_ENDPOINT)
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0")
+                .header("Referer", "https://music.youtube.com/")
+                .header("Origin", "https://music.youtube.com")
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext searchAudio("New Releases 2026")
+
+            val rawJson = response.body?.string().orEmpty()
+            val root = JsonParser.parseString(rawJson).asJsonObject
+            val contents = root.getAsJsonObject("contents")
+                ?.getAsJsonObject("singleColumnBrowseResultsRenderer")
+                ?.getAsJsonArray("tabs")
+                ?.get(0)?.asJsonObject
+                ?.getAsJsonObject("tabRenderer")
+                ?.getAsJsonObject("content")
+                ?.getAsJsonObject("sectionListRenderer")
+                ?.getAsJsonArray("contents") ?: return@withContext searchAudio("New Releases 2026")
+
+            val tracks = mutableListOf<Track>()
+            for (sec in contents) {
+                val carousel = sec.asJsonObject.getAsJsonObject("musicCarouselShelfRenderer") ?: continue
+                val items = carousel.getAsJsonArray("contents") ?: continue
+
+                for (item in items) {
+                    val twoRow = item.asJsonObject.getAsJsonObject("musicTwoRowItemRenderer") ?: continue
+                    val title = extractText(twoRow.get("title"))
+                    val subtitle = extractText(twoRow.get("subtitle"))
+                    if (title.isBlank()) continue
+
+                    val videoId = twoRow.getAsJsonObject("thumbnailOverlay")
+                        ?.getAsJsonObject("musicItemThumbnailOverlayRenderer")
+                        ?.getAsJsonObject("content")
+                        ?.getAsJsonObject("musicPlayButtonRenderer")
+                        ?.getAsJsonObject("playNavigationEndpoint")
+                        ?.getAsJsonObject("watchEndpoint")
+                        ?.get("videoId")?.asString
+                        ?: twoRow.getAsJsonObject("navigationEndpoint")
+                            ?.getAsJsonObject("watchEndpoint")
+                            ?.get("videoId")?.asString
+                        ?: continue
+
+                    val thumb = extractBestThumbnail(
+                        twoRow.getAsJsonObject("thumbnailRenderer")?.getAsJsonObject("musicThumbnailRenderer")?.getAsJsonObject("thumbnail"),
+                        videoId
+                    )
+
+                    tracks.add(
+                        Track(
+                            id = videoId,
+                            youtubeVideoId = videoId,
+                            title = title,
+                            artist = subtitle.ifBlank { "YouTube Music" },
+                            channel = subtitle.ifBlank { "YouTube Music" },
+                            thumbnailUrl = thumb,
+                            duration = "3:40",
+                            durationSeconds = 220,
+                            category = "New Releases"
+                        )
+                    )
+                }
+            }
+            if (tracks.isNotEmpty()) tracks else searchAudio("New Releases 2026")
+        } catch (e: Exception) {
+            searchAudio("New Releases 2026")
+        }
+    }
+
+    suspend fun getCategoryTracks(categoryName: String): List<Track> = withContext(Dispatchers.IO) {
+        val tracks = searchAudio("$categoryName music")
+        if (tracks.isNotEmpty()) return@withContext tracks
+        searchVideo("$categoryName songs")
+    }
+
+    // ==========================================
+    // 8. PARSING HELPERS
+    // ==========================================
+    private fun parseYtmTracksResponse(jsonString: String, categoryTag: String): List<Track> {
+        val tracks = mutableListOf<Track>()
+        try {
+            val root = JsonParser.parseString(jsonString).asJsonObject
+            val contents = root.getAsJsonObject("contents")
+                ?.getAsJsonObject("tabbedSearchResultsRenderer")
+                ?.getAsJsonArray("tabs")
+                ?.get(0)?.asJsonObject
+                ?.getAsJsonObject("tabRenderer")
+                ?.getAsJsonObject("content")
+                ?.getAsJsonObject("sectionListRenderer")
+                ?.getAsJsonArray("contents") ?: return emptyList()
+
+            for (sec in contents) {
+                val shelf = sec.asJsonObject.getAsJsonObject("musicShelfRenderer") ?: continue
+                val items = shelf.getAsJsonArray("contents") ?: continue
+
+                for (item in items) {
+                    val r = item.asJsonObject.getAsJsonObject("musicResponsiveListItemRenderer") ?: continue
+                    val flexCols = r.getAsJsonArray("flexColumns") ?: continue
+                    if (flexCols.size() < 1) continue
+
+                    val title = extractText(flexCols.get(0).asJsonObject.getAsJsonObject("musicResponsiveListItemFlexColumnRenderer")?.get("text"))
+                    if (title.isBlank()) continue
+
+                    val artistText = if (flexCols.size() > 1) {
+                        extractText(flexCols.get(1).asJsonObject.getAsJsonObject("musicResponsiveListItemFlexColumnRenderer")?.get("text"))
+                    } else "YouTube Music"
+
+                    val videoId = r.getAsJsonObject("overlay")
+                        ?.getAsJsonObject("musicItemThumbnailOverlayRenderer")
+                        ?.getAsJsonObject("content")
+                        ?.getAsJsonObject("musicPlayButtonRenderer")
+                        ?.getAsJsonObject("playNavigationEndpoint")
+                        ?.getAsJsonObject("watchEndpoint")
+                        ?.get("videoId")?.asString
+                        ?: r.getAsJsonObject("navigationEndpoint")
+                            ?.getAsJsonObject("watchEndpoint")
+                            ?.get("videoId")?.asString
+                        ?: continue
+
+                    val thumb = extractBestThumbnail(
+                        r.getAsJsonObject("thumbnail")?.getAsJsonObject("musicThumbnailRenderer")?.getAsJsonObject("thumbnail"),
+                        videoId
+                    )
+
+                    tracks.add(
+                        Track(
+                            id = videoId,
+                            youtubeVideoId = videoId,
+                            title = title,
+                            artist = artistText,
+                            channel = artistText,
+                            thumbnailUrl = thumb,
+                            duration = "3:30",
+                            durationSeconds = 210,
+                            category = categoryTag
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            DiagnosticsLogger.logPlayer("YTMParse", "Error parsing YTM search: ${e.message}")
+        }
+        return tracks
+    }
+
+    private fun parseYtVideoResponse(jsonString: String): List<Track> {
         val tracks = mutableListOf<Track>()
         try {
             val root = JsonParser.parseString(jsonString).asJsonObject
@@ -91,7 +587,7 @@ object InnerTubeClient {
 
                     val artist = extractText(videoRenderer.get("shortBylineText"))
                         .ifBlank { extractText(videoRenderer.get("longBylineText")) }
-                        .ifBlank { "YouTube Music" }
+                        .ifBlank { "YouTube" }
 
                     val durationText = extractText(videoRenderer.get("lengthText"))
                     val durationSeconds = DurationUtils.parseTimeStringToSeconds(durationText)
@@ -109,14 +605,14 @@ object InnerTubeClient {
                             thumbnailUrl = thumbnail,
                             duration = durationText.ifBlank { DurationUtils.formatSecondsToTime(durationSeconds) },
                             durationSeconds = durationSeconds,
-                            category = "Search",
+                            category = "Video",
                             viewCount = viewCount
                         )
                     )
                 }
             }
         } catch (e: Exception) {
-            DiagnosticsLogger.logPlayer("InnerTubeParse", "Error parsing search: ${e.message}")
+            DiagnosticsLogger.logPlayer("YTParse", "Error parsing YT video search: ${e.message}")
         }
         return tracks
     }
@@ -126,20 +622,12 @@ object InnerTubeClient {
 
         try {
             val payload = JsonObject().apply {
-                val context = JsonObject().apply {
-                    val client = JsonObject().apply {
-                        addProperty("clientName", "ANDROID")
-                        addProperty("clientVersion", "20.10.38")
-                        addProperty("hl", "en")
-                    }
-                    add("client", client)
-                }
-                add("context", context)
+                add("context", getAndroidContext())
                 addProperty("videoId", videoId)
             }
 
             val request = Request.Builder()
-                .url(PLAYER_ENDPOINT)
+                .url(YT_PLAYER_ENDPOINT)
                 .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                 .header("User-Agent", "com.google.android.youtube/20.10.38 (Linux; U; Android 14)")
                 .build()

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.musictube.MusicTubeApplication
 import com.example.musictube.data.repository.MusicRepository
+import com.example.musictube.domain.model.Artist
 import com.example.musictube.domain.model.Playlist
 import com.example.musictube.domain.model.Track
 import com.example.musictube.playback.PlaybackManager
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
@@ -22,9 +24,18 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+enum class SearchFilter(val label: String) {
+    ALL("All"),
+    SONGS("Songs (Audio)"),
+    ARTISTS("Artists"),
+    VIDEOS("Videos")
+}
+
 data class SearchUiState(
     val query: String = "",
     val results: List<Track> = emptyList(),
+    val artistResults: List<Artist> = emptyList(),
+    val selectedFilter: SearchFilter = SearchFilter.ALL,
     val recentSearches: List<String> = emptyList(),
     val playlists: List<Playlist> = emptyList(),
     val isLoading: Boolean = false,
@@ -40,6 +51,12 @@ class SearchViewModel(
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
+    private val _selectedFilter = MutableStateFlow(SearchFilter.ALL)
+    val selectedFilter: StateFlow<SearchFilter> = _selectedFilter.asStateFlow()
+
+    private val _artistResults = MutableStateFlow<List<Artist>>(emptyList())
+    val artistResults: StateFlow<List<Artist>> = _artistResults.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -52,23 +69,71 @@ class SearchViewModel(
     val recentSearches: StateFlow<List<String>> = repository.getRecentSearches()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val searchResults: StateFlow<List<Track>> = _query
-        .debounce(400)
+    val searchResults: StateFlow<List<Track>> = combine(_query, _selectedFilter) { q, filter ->
+        Pair(q, filter)
+    }
+        .debounce(350)
         .distinctUntilChanged()
-        .flatMapLatest { q ->
+        .flatMapLatest { (q, filter) ->
             if (q.isBlank()) {
                 _isLoading.value = false
+                _artistResults.value = emptyList()
                 flowOf(emptyList())
             } else {
                 _isLoading.value = true
                 _error.value = null
                 repository.addSearchQuery(q)
-                repository.searchTracks(q)
-                    .catch { e ->
-                        _error.value = e.localizedMessage ?: "Search failed"
-                        _isLoading.value = false
-                        emit(emptyList())
+
+                when (filter) {
+                    SearchFilter.ARTISTS -> {
+                        viewModelScope.launch {
+                            try {
+                                repository.searchArtists(q).collect { artists ->
+                                    _artistResults.value = artists
+                                    _isLoading.value = false
+                                }
+                            } catch (e: Exception) {
+                                _artistResults.value = emptyList()
+                                _isLoading.value = false
+                            }
+                        }
+                        flowOf(emptyList())
                     }
+                    SearchFilter.SONGS -> {
+                        _artistResults.value = emptyList()
+                        repository.searchTracks(q, "AUDIO")
+                            .catch { e ->
+                                _error.value = e.localizedMessage ?: "Search failed"
+                                _isLoading.value = false
+                                emit(emptyList())
+                            }
+                    }
+                    SearchFilter.VIDEOS -> {
+                        _artistResults.value = emptyList()
+                        repository.searchTracks(q, "VIDEO")
+                            .catch { e ->
+                                _error.value = e.localizedMessage ?: "Search failed"
+                                _isLoading.value = false
+                                emit(emptyList())
+                            }
+                    }
+                    SearchFilter.ALL -> {
+                        // In ALL mode, fetch both matching tracks and artist cards
+                        viewModelScope.launch {
+                            try {
+                                repository.searchArtists(q).collect { artists ->
+                                    _artistResults.value = artists.take(3)
+                                }
+                            } catch (_: Exception) {}
+                        }
+                        repository.searchTracks(q, "ALL")
+                            .catch { e ->
+                                _error.value = e.localizedMessage ?: "Search failed"
+                                _isLoading.value = false
+                                emit(emptyList())
+                            }
+                    }
+                }
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -84,6 +149,10 @@ class SearchViewModel(
                 _isLoading.value = false
             }
         }
+    }
+
+    fun setFilter(filter: SearchFilter) {
+        _selectedFilter.value = filter
     }
 
     fun onQueryChange(newQuery: String) {

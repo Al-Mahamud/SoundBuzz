@@ -104,6 +104,10 @@ class PlayerViewModel(
         playbackManager.clearQueue()
     }
 
+    fun stopAndDismiss() {
+        playbackManager.stopAndDismiss()
+    }
+
     fun shuffleQueue() {
         playbackManager.shuffleQueue()
     }

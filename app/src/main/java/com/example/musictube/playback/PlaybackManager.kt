@@ -268,6 +268,18 @@ class PlaybackManager(
         PlaybackService.stopService(context)
     }
 
+    fun stopAndDismiss() {
+        try {
+            activeYouTubePlayer?.pause()
+        } catch (e: Exception) {
+            // ignore
+        }
+        _queue.value = emptyList()
+        _currentQueueIndex.value = -1
+        _playerState.update { PlayerState() }
+        PlaybackService.stopService(context)
+    }
+
     fun shuffleQueue() {
         val currentTrack = _playerState.value.currentTrack
         val q = _queue.value.toMutableList()
