@@ -21,7 +21,16 @@ class PlaylistDetailViewModel(
     private val playbackManager: PlaybackManager = MusicTubeApplication.instance.playbackManager
 ) : ViewModel() {
 
-    val playlistId: Long = checkNotNull(savedStateHandle["playlistId"]).toString().toLongOrNull() ?: 0L
+    @JvmOverloads
+    constructor(savedStateHandle: SavedStateHandle = SavedStateHandle()) : this(
+        savedStateHandle = savedStateHandle,
+        repository = MusicTubeApplication.instance.repository,
+        playbackManager = MusicTubeApplication.instance.playbackManager
+    )
+
+    val playlistId: Long = savedStateHandle.get<Long>("playlistId")
+        ?: savedStateHandle.get<String>("playlistId")?.toLongOrNull()
+        ?: 0L
 
     private val _playlist = MutableStateFlow<Playlist?>(null)
     val playlist: StateFlow<Playlist?> = _playlist.asStateFlow()

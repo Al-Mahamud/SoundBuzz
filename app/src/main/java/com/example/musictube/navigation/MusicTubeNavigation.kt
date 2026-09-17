@@ -167,12 +167,20 @@ fun MusicTubeApp() {
                 composable(Screen.Home.route) {
                     HomeScreen(
                         onNavigateToArtist = { artistName ->
-                            val encoded = URLEncoder.encode(artistName, "UTF-8")
-                            navController.navigate("artist/$encoded")
+                            try {
+                                val encoded = com.example.musictube.utils.NavUtils.encodeArg(artistName)
+                                navController.navigate("artist/$encoded")
+                            } catch (e: Exception) {
+                                com.example.musictube.utils.DiagnosticsLogger.e("Navigation", "Error navigating to artist: $artistName", e)
+                            }
                         },
                         onNavigateToCategory = { categoryName ->
-                            val encoded = URLEncoder.encode(categoryName, "UTF-8")
-                            navController.navigate("category/$encoded")
+                            try {
+                                val encoded = com.example.musictube.utils.NavUtils.encodeArg(categoryName)
+                                navController.navigate("category/$encoded")
+                            } catch (e: Exception) {
+                                com.example.musictube.utils.DiagnosticsLogger.e("Navigation", "Error navigating to category: $categoryName", e)
+                            }
                         },
                         onNavigateToPlayer = {
                             isPlayerExpanded = true
@@ -183,8 +191,12 @@ fun MusicTubeApp() {
                 composable(Screen.Search.route) {
                     SearchScreen(
                         onNavigateToArtist = { artistName ->
-                            val encoded = URLEncoder.encode(artistName, "UTF-8")
-                            navController.navigate("artist/$encoded")
+                            try {
+                                val encoded = com.example.musictube.utils.NavUtils.encodeArg(artistName)
+                                navController.navigate("artist/$encoded")
+                            } catch (e: Exception) {
+                                com.example.musictube.utils.DiagnosticsLogger.e("Navigation", "Error navigating to artist: $artistName", e)
+                            }
                         },
                         onNavigateToPlayer = {
                             isPlayerExpanded = true
@@ -195,11 +207,19 @@ fun MusicTubeApp() {
                 composable(Screen.Library.route) {
                     LibraryScreen(
                         onNavigateToPlaylist = { playlistId ->
-                            navController.navigate("playlist/$playlistId")
+                            try {
+                                navController.navigate("playlist/$playlistId")
+                            } catch (e: Exception) {
+                                com.example.musictube.utils.DiagnosticsLogger.e("Navigation", "Error navigating to playlist: $playlistId", e)
+                            }
                         },
                         onNavigateToArtist = { artistName ->
-                            val encoded = URLEncoder.encode(artistName, "UTF-8")
-                            navController.navigate("artist/$encoded")
+                            try {
+                                val encoded = com.example.musictube.utils.NavUtils.encodeArg(artistName)
+                                navController.navigate("artist/$encoded")
+                            } catch (e: Exception) {
+                                com.example.musictube.utils.DiagnosticsLogger.e("Navigation", "Error navigating to artist: $artistName", e)
+                            }
                         },
                         onNavigateToPlayer = {
                             isPlayerExpanded = true
@@ -245,8 +265,12 @@ fun MusicTubeApp() {
                             isPlayerExpanded = true
                         },
                         onNavigateToArtist = { artistName ->
-                            val encoded = URLEncoder.encode(artistName, "UTF-8")
-                            navController.navigate("artist/$encoded")
+                            try {
+                                val encoded = com.example.musictube.utils.NavUtils.encodeArg(artistName)
+                                navController.navigate("artist/$encoded")
+                            } catch (e: Exception) {
+                                com.example.musictube.utils.DiagnosticsLogger.e("Navigation", "Error navigating to artist: $artistName", e)
+                            }
                         }
                     )
                 }
@@ -267,9 +291,13 @@ fun MusicTubeApp() {
             PlayerScreen(
                 onNavigateBack = { isPlayerExpanded = false },
                 onNavigateToArtist = { artistName ->
-                    isPlayerExpanded = false
-                    val encoded = URLEncoder.encode(artistName, "UTF-8")
-                    navController.navigate("artist/$encoded")
+                    try {
+                        isPlayerExpanded = false
+                        val encoded = com.example.musictube.utils.NavUtils.encodeArg(artistName)
+                        navController.navigate("artist/$encoded")
+                    } catch (e: Exception) {
+                        com.example.musictube.utils.DiagnosticsLogger.e("Navigation", "Error navigating to artist: $artistName", e)
+                    }
                 }
             )
         }

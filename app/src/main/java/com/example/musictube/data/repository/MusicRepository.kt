@@ -13,10 +13,12 @@ import com.example.musictube.data.remote.innertube.InnerTubeClient
 import com.example.musictube.data.remote.model.DefaultMusicCatalog
 import com.example.musictube.domain.model.Artist
 import com.example.musictube.domain.model.Category
+import com.example.musictube.domain.model.CategoryPlaylist
 import com.example.musictube.domain.model.LyricLine
 import com.example.musictube.domain.model.Playlist
 import com.example.musictube.domain.model.Track
 import com.example.musictube.domain.usecase.RecommendationEngine
+import com.example.musictube.utils.DiagnosticsLogger
 import com.example.musictube.utils.DurationUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -233,6 +235,66 @@ class MusicRepository(
 
         val favIds = favoriteDao.getAllFavoriteVideoIdsDirect().toSet()
         emit(tracks.map { it.copy(isFavorite = favIds.contains(it.youtubeVideoId)) })
+    }.flowOn(Dispatchers.IO)
+
+    fun getCategoryPlaylists(): Flow<List<CategoryPlaylist>> = flow {
+        val categoriesConfig = listOf(
+            Triple("Workout", "High-Energy Workout Beats", "Power up your session with pulse-pounding workout hits"),
+            Triple("Chill", "Midnight Lo-Fi & Chill", "Soothing beats and ambient melodies to relax and unwind"),
+            Triple("Party", "Ultimate Party Bangers", "Dance floor anthems and chart-topping party hits"),
+            Triple("Focus", "Deep Focus & Study Flow", "Calm instrumentals for productivity and deep work"),
+            Triple("Pop", "Global Pop Anthems", "Today's hottest pop hits and trending viral anthems"),
+            Triple("Rock", "Rock Legends & Anthems", "High-voltage riffs and timeless rock classics"),
+            Triple("Romance", "Romantic Evening Serenade", "Sweet acoustic and emotional love ballads"),
+            Triple("Bangla", "Bangla & Regional Vibes", "Soulful regional hits and popular Bengali melodies")
+        )
+
+        // 1. Initial immediate emission using local catalog so UI renders with zero lag
+        val initialPlaylists = categoriesConfig.map { (catName, title, desc) ->
+            val matched = DefaultMusicCatalog.catalogTracks.filter {
+                it.category.equals(catName, ignoreCase = true)
+            }.ifEmpty { DefaultMusicCatalog.catalogTracks.shuffled().take(6) }
+
+            CategoryPlaylist(
+                id = "cat_pl_${catName.lowercase()}",
+                title = title,
+                category = catName,
+                description = desc,
+                thumbnailUrl = matched.firstOrNull()?.thumbnailUrl ?: "https://img.youtube.com/vi/4NRXx6U8ABQ/hqdefault.jpg",
+                trackCount = matched.size,
+                tracks = matched
+            )
+        }
+        emit(initialPlaylists)
+
+        // 2. Refresh asynchronously with live InnerTube category tracks
+        try {
+            val livePlaylists = categoriesConfig.map { (catName, title, desc) ->
+                var tracks: List<Track> = emptyList()
+                try {
+                    tracks = InnerTubeClient.getCategoryTracks(catName).take(12)
+                } catch (_: Exception) {}
+
+                if (tracks.isEmpty()) {
+                    tracks = DefaultMusicCatalog.catalogTracks.filter {
+                        it.category.equals(catName, ignoreCase = true)
+                    }.ifEmpty { DefaultMusicCatalog.catalogTracks.shuffled().take(6) }
+                }
+
+                CategoryPlaylist(
+                    id = "cat_pl_${catName.lowercase()}",
+                    title = title,
+                    category = catName,
+                    description = desc,
+                    thumbnailUrl = tracks.firstOrNull()?.thumbnailUrl ?: "https://img.youtube.com/vi/4NRXx6U8ABQ/hqdefault.jpg",
+                    trackCount = tracks.size,
+                    tracks = tracks
+                )
+            }
+            emit(livePlaylists)
+        } catch (e: Exception) {
+            DiagnosticsLogger.w("Repository", "InnerTube category playlists refresh note: ${e.message}")
+        }
     }.flowOn(Dispatchers.IO)
 
     fun searchTracks(query: String, searchMode: String = "ALL"): Flow<List<Track>> = flow {

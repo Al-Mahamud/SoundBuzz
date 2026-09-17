@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -73,11 +75,18 @@ fun DiagnosticsSheet(
     val context = LocalContext.current
 
     val playerState by playbackManager.playerState.collectAsState()
+    val generalLogs by DiagnosticsLogger.generalLogs.collectAsState()
     val apiLogs by DiagnosticsLogger.apiLogs.collectAsState()
     val playerLogs by DiagnosticsLogger.playerLogs.collectAsState()
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Player Status", "API Responses (${apiLogs.size})", "Player Events (${playerLogs.size})")
+    val errorCount = generalLogs.count { it.level == com.example.musictube.utils.LogLevel.ERROR || it.level == com.example.musictube.utils.LogLevel.CRASH }
+    val tabs = listOf(
+        "General (${generalLogs.size})" + if (errorCount > 0) " ⚠️$errorCount" else "",
+        "Player Status",
+        "API Calls (${apiLogs.size})",
+        "Events (${playerLogs.size})"
+    )
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -87,7 +96,7 @@ fun DiagnosticsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.85f)
+                .fillMaxHeight(0.90f)
                 .padding(horizontal = 16.dp)
         ) {
             // Header
@@ -105,7 +114,7 @@ fun DiagnosticsSheet(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Diagnostics & Live Response",
+                        text = "Diagnostics & App Logs",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -114,25 +123,32 @@ fun DiagnosticsSheet(
                 Row {
                     IconButton(onClick = {
                         val fullLog = buildString {
-                            appendLine("=== SOUNDBUZZ DIAGNOSTICS LOG ===")
+                            appendLine("=== SOUNDBUZZ DIAGNOSTICS & SYSTEM LOG ===")
                             appendLine("Player State: ${playerState.playState}")
                             appendLine("Current Track: ${playerState.currentTrack?.title} [${playerState.currentTrack?.youtubeVideoId}]")
                             appendLine("Position: ${playerState.currentPositionSeconds}s / ${playerState.durationSeconds}s")
                             appendLine("Error Message: ${playerState.errorMessage}")
-                            appendLine("\n--- RECENT API CALLS ---")
+                            appendLine("\n--- GENERAL & CRASH LOGS (${generalLogs.size}) ---")
+                            generalLogs.forEach {
+                                appendLine("[${it.timestamp}] [${it.level}] [${it.tag}] ${it.message}")
+                                if (it.stackTrace != null) {
+                                    appendLine("StackTrace:\n${it.stackTrace}")
+                                }
+                            }
+                            appendLine("\n--- RECENT API CALLS (${apiLogs.size}) ---")
                             apiLogs.forEach {
                                 appendLine("[${it.timestamp}] ${it.method} ${it.summary} -> ${it.url}")
                                 appendLine("Response: ${it.rawResponse.take(500)}")
                                 appendLine("---")
                             }
-                            appendLine("\n--- PLAYER EVENTS ---")
+                            appendLine("\n--- PLAYER EVENTS (${playerLogs.size}) ---")
                             playerLogs.forEach {
                                 appendLine("[${it.timestamp}] ${it.event}: ${it.details}")
                             }
                         }
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("SoundBuzz Diagnostics", fullLog))
-                        Toast.makeText(context, "Diagnostics copied to clipboard!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Full diagnostics & logs copied to clipboard!", Toast.LENGTH_SHORT).show()
                     }) {
                         Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = MaterialTheme.colorScheme.primary)
                     }
@@ -186,7 +202,7 @@ fun DiagnosticsSheet(
                     Tab(
                         selected = selectedTabIndex == index,
                         onClick = { selectedTabIndex = index },
-                        text = { Text(title, fontSize = 12.sp) }
+                        text = { Text(title, fontSize = 11.sp, maxLines = 1) }
                     )
                 }
             }
@@ -194,9 +210,10 @@ fun DiagnosticsSheet(
             Spacer(modifier = Modifier.height(12.dp))
 
             when (selectedTabIndex) {
-                0 -> PlayerStatusView(playerState)
-                1 -> ApiLogsView(apiLogs)
-                2 -> PlayerLogsView(playerLogs)
+                0 -> GeneralLogsView(generalLogs)
+                1 -> PlayerStatusView(playerState)
+                2 -> ApiLogsView(apiLogs)
+                3 -> PlayerLogsView(playerLogs)
             }
         }
     }
@@ -367,5 +384,207 @@ private fun StatusRow(label: String, value: String, color: Color = MaterialTheme
     ) {
         Text(text = label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(text = value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = color)
+    }
+}
+
+@Composable
+private fun GeneralLogsView(logs: List<com.example.musictube.utils.GeneralLogEntry>) {
+    var filterMode by remember { mutableStateOf("ALL") } // ALL, ERRORS, INFO
+
+    val filteredLogs = remember(logs, filterMode) {
+        when (filterMode) {
+            "ERRORS" -> logs.filter { it.level == com.example.musictube.utils.LogLevel.ERROR || it.level == com.example.musictube.utils.LogLevel.CRASH }
+            "INFO" -> logs.filter { it.level == com.example.musictube.utils.LogLevel.INFO }
+            else -> logs
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Filter bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val totalErrors = logs.count { it.level == com.example.musictube.utils.LogLevel.ERROR || it.level == com.example.musictube.utils.LogLevel.CRASH }
+
+            FilterChipButton(
+                label = "All (${logs.size})",
+                isSelected = filterMode == "ALL",
+                onClick = { filterMode = "ALL" }
+            )
+            FilterChipButton(
+                label = "Errors/Crashes ($totalErrors)",
+                isSelected = filterMode == "ERRORS",
+                isAlert = totalErrors > 0,
+                onClick = { filterMode = "ERRORS" }
+            )
+            FilterChipButton(
+                label = "Info",
+                isSelected = filterMode == "INFO",
+                onClick = { filterMode = "INFO" }
+            )
+        }
+
+        if (filteredLogs.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (logs.isEmpty()) "No general logs recorded yet." else "No logs match the selected filter.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(filteredLogs, key = { it.id }) { log ->
+                    var isExpanded by remember { mutableStateOf(false) }
+
+                    val levelColor = when (log.level) {
+                        com.example.musictube.utils.LogLevel.CRASH -> Color(0xFFFF1744)
+                        com.example.musictube.utils.LogLevel.ERROR -> Color(0xFFFF5252)
+                        com.example.musictube.utils.LogLevel.WARN -> Color(0xFFFFAB00)
+                        com.example.musictube.utils.LogLevel.INFO -> Color(0xFF00E5FF)
+                        com.example.musictube.utils.LogLevel.DEBUG -> Color(0xFF9E9E9E)
+                    }
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (log.level == com.example.musictube.utils.LogLevel.CRASH)
+                                Color(0xFF330B0B)
+                            else if (log.level == com.example.musictube.utils.LogLevel.ERROR)
+                                Color(0xFF2B1010)
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        color = levelColor.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = log.level.name,
+                                            color = levelColor,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = log.tag,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                Text(
+                                    text = log.timestamp,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Text(
+                                text = log.message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 12.sp
+                            )
+
+                            if (!log.stackTrace.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { isExpanded = !isExpanded }
+                                        .padding(vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (isExpanded) "Hide Stack Trace ▲" else "View Stack Trace ▼",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                if (isExpanded) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = MaterialTheme.colorScheme.surface
+                                    ) {
+                                        Text(
+                                            text = log.stackTrace,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 10.sp,
+                                            color = Color(0xFFFF8A80),
+                                            modifier = Modifier
+                                                .padding(6.dp)
+                                                .horizontalScroll(rememberScrollState()),
+                                            maxLines = 15
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterChipButton(
+    label: String,
+    isSelected: Boolean,
+    isAlert: Boolean = false,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = when {
+            isSelected && isAlert -> MaterialTheme.colorScheme.error
+            isSelected -> MaterialTheme.colorScheme.primary
+            isAlert -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+            else -> MaterialTheme.colorScheme.surfaceVariant
+        }
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+            color = when {
+                isSelected && isAlert -> MaterialTheme.colorScheme.onError
+                isSelected -> MaterialTheme.colorScheme.onPrimary
+                isAlert -> MaterialTheme.colorScheme.error
+                else -> MaterialTheme.colorScheme.onSurface
+            },
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+        )
     }
 }

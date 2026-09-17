@@ -7,6 +7,7 @@ import com.example.musictube.data.remote.model.DefaultMusicCatalog
 import com.example.musictube.data.repository.MusicRepository
 import com.example.musictube.domain.model.Artist
 import com.example.musictube.domain.model.Category
+import com.example.musictube.domain.model.CategoryPlaylist
 import com.example.musictube.domain.model.Playlist
 import com.example.musictube.domain.model.Track
 import com.example.musictube.playback.PlaybackManager
@@ -23,6 +24,7 @@ data class HomeUiState(
     val trending: List<Track> = DefaultMusicCatalog.catalogTracks.take(8),
     val popular: List<Track> = DefaultMusicCatalog.catalogTracks.sortedByDescending { it.viewCount }.take(10),
     val newReleases: List<Track> = DefaultMusicCatalog.catalogTracks.reversed().take(8),
+    val categoryPlaylists: List<CategoryPlaylist> = emptyList(),
     val popularArtists: List<Artist> = DefaultMusicCatalog.popularArtists,
     val categories: List<Category> = DefaultMusicCatalog.categories,
     val regionalMusic: List<Track> = DefaultMusicCatalog.catalogTracks.filter { it.category.equals("Bangla", ignoreCase = true) || it.category.equals("Bollywood", ignoreCase = true) },
@@ -71,6 +73,19 @@ class HomeViewModel(
                 .catch { /* ignore */ }
                 .collect { list ->
                     _uiState.update { it.copy(playlists = list) }
+                }
+        }
+
+        // Collect different category playlists
+        viewModelScope.launch {
+            repository.getCategoryPlaylists()
+                .catch { e ->
+                    com.example.musictube.utils.DiagnosticsLogger.e("Home", "Failed to load category playlists", e)
+                }
+                .collect { list ->
+                    if (list.isNotEmpty()) {
+                        _uiState.update { it.copy(categoryPlaylists = list) }
+                    }
                 }
         }
 
@@ -127,6 +142,12 @@ class HomeViewModel(
                         _uiState.update { it.copy(categories = list) }
                     }
                 }
+        }
+    }
+
+    fun playCategoryPlaylist(playlist: CategoryPlaylist) {
+        if (playlist.tracks.isNotEmpty()) {
+            playbackManager.playTrack(playlist.tracks.first(), playlist.tracks)
         }
     }
 

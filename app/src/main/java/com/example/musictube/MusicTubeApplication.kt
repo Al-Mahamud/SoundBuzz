@@ -19,6 +19,7 @@ class MusicTubeApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        com.example.musictube.utils.DiagnosticsLogger.init(this)
         database = MusicTubeDatabase.getInstance(this)
         repository = MusicRepository(database)
         playbackManager = PlaybackManager(repository, this)

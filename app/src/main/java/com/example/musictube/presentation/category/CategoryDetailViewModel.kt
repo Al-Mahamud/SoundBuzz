@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.example.musictube.utils.DiagnosticsLogger
+import com.example.musictube.utils.NavUtils
 
 data class CategoryDetailUiState(
     val categoryName: String = "",
@@ -31,12 +33,24 @@ class CategoryDetailViewModel(
     private val playbackManager: PlaybackManager = MusicTubeApplication.instance.playbackManager
 ) : ViewModel() {
 
-    val categoryName: String = java.net.URLDecoder.decode(checkNotNull(savedStateHandle["categoryName"]), "UTF-8")
+    @JvmOverloads
+    constructor(savedStateHandle: SavedStateHandle = SavedStateHandle()) : this(
+        savedStateHandle = savedStateHandle,
+        repository = MusicTubeApplication.instance.repository,
+        playbackManager = MusicTubeApplication.instance.playbackManager
+    )
+
+    val categoryName: String = run {
+        val raw = savedStateHandle.get<String>("categoryName").orEmpty()
+        val decoded = NavUtils.decodeArg(raw)
+        if (decoded.isNotBlank()) decoded else "Category"
+    }
 
     private val _uiState = MutableStateFlow(CategoryDetailUiState(categoryName = categoryName, isLoading = true))
     val uiState: StateFlow<CategoryDetailUiState> = _uiState.asStateFlow()
 
     init {
+        DiagnosticsLogger.i("CategoryDetail", "Opening category screen: '$categoryName'")
         loadCategoryTracks()
         loadPlaylists()
     }

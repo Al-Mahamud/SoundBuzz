@@ -16,13 +16,30 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+import com.example.musictube.utils.DiagnosticsLogger
+import com.example.musictube.utils.NavUtils
+
 class ArtistDetailViewModel(
     savedStateHandle: SavedStateHandle,
     private val repository: MusicRepository = MusicTubeApplication.instance.repository,
     private val playbackManager: PlaybackManager = MusicTubeApplication.instance.playbackManager
 ) : ViewModel() {
 
-    val artistName: String = java.net.URLDecoder.decode(checkNotNull(savedStateHandle["artistName"]), "UTF-8")
+    @JvmOverloads
+    constructor(savedStateHandle: SavedStateHandle = SavedStateHandle()) : this(
+        savedStateHandle = savedStateHandle,
+        repository = MusicTubeApplication.instance.repository,
+        playbackManager = MusicTubeApplication.instance.playbackManager
+    )
+
+    val artistName: String = run {
+        val raw = savedStateHandle.get<String>("artistName").orEmpty()
+        val decoded = NavUtils.decodeArg(raw)
+        if (decoded.isNotBlank()) decoded else "Unknown Artist"
+    }
+
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _artist = MutableStateFlow<Artist?>(null)
     val artist: StateFlow<Artist?> = _artist.asStateFlow()
@@ -34,18 +51,32 @@ class ArtistDetailViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
+        DiagnosticsLogger.i("ArtistDetail", "Opening artist screen for: '$artistName'")
         loadArtistData()
     }
 
-    private fun loadArtistData() {
+    fun loadArtistData() {
+        _isLoading.value = true
         viewModelScope.launch {
-            repository.getArtistDetails(artistName).collect { a ->
-                _artist.value = a
+            try {
+                repository.getArtistDetails(artistName).collect { a ->
+                    _artist.value = a
+                    _isLoading.value = false
+                    DiagnosticsLogger.d("ArtistDetail", "Fetched details for '$artistName', topTracks: ${a?.popularTracks?.size ?: 0}")
+                }
+            } catch (e: Exception) {
+                DiagnosticsLogger.e("ArtistDetail", "Failed to fetch artist details for '$artistName'", e)
+                _isLoading.value = false
             }
         }
         viewModelScope.launch {
-            repository.searchTracks(artistName).collect { tracks ->
-                _relatedTracks.value = tracks
+            try {
+                repository.searchTracks(artistName).collect { tracks ->
+                    _relatedTracks.value = tracks
+                    DiagnosticsLogger.d("ArtistDetail", "Fetched ${tracks.size} related tracks for '$artistName'")
+                }
+            } catch (e: Exception) {
+                DiagnosticsLogger.e("ArtistDetail", "Failed to fetch related tracks for '$artistName'", e)
             }
         }
     }

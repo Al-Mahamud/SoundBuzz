@@ -59,6 +59,7 @@ fun ArtistDetailScreen(
     val artist by viewModel.artist.collectAsState()
     val relatedTracks by viewModel.relatedTracks.collectAsState()
     val playlists by viewModel.playlists.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
 
     var selectedTrackForMenu by remember { mutableStateOf<Track?>(null) }
     var selectedTrackForPlaylist by remember { mutableStateOf<Track?>(null) }
@@ -84,12 +85,22 @@ fun ArtistDetailScreen(
             )
         }
     ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = PaddingValues(bottom = 90.dp)
-        ) {
+        if (isLoading && artist == null && allArtistTracks.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                androidx.compose.material3.CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentPadding = PaddingValues(bottom = 90.dp)
+            ) {
             // Artist Header
             item {
                 Column(
@@ -194,6 +205,7 @@ fun ArtistDetailScreen(
             }
         }
     }
+}
 
     // Options Bottom Sheet
     selectedTrackForMenu?.let { track ->

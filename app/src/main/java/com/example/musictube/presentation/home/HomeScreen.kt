@@ -25,8 +25,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -53,6 +56,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.musictube.domain.model.Artist
 import com.example.musictube.domain.model.Category
+import com.example.musictube.domain.model.CategoryPlaylist
 import com.example.musictube.domain.model.Track
 import com.example.musictube.presentation.components.AddToPlaylistDialog
 import com.example.musictube.presentation.components.ErrorRetryView
@@ -202,7 +206,32 @@ fun HomeScreen(
                             Spacer(modifier = Modifier.height(18.dp))
                         }
 
-                        // 5. Popular Artists
+                        // 5. Different Category Playlists
+                        if (uiState.categoryPlaylists.isNotEmpty()) {
+                            item {
+                                SectionHeader(title = "Featured Category Playlists")
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    items(uiState.categoryPlaylists) { playlist ->
+                                        CategoryPlaylistCard(
+                                            playlist = playlist,
+                                            onClick = { onNavigateToCategory(playlist.category) },
+                                            onPlayClick = {
+                                                viewModel.playCategoryPlaylist(playlist)
+                                                if (playlist.tracks.isNotEmpty()) {
+                                                    onNavigateToPlayer(playlist.tracks.first().youtubeVideoId)
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(18.dp))
+                            }
+                        }
+
+                        // 6. Popular Artists
                         item {
                             SectionHeader(title = "Popular Artists")
                             LazyRow(
@@ -422,6 +451,108 @@ fun HomeLoadingSkeleton() {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun CategoryPlaylistCard(
+    playlist: CategoryPlaylist,
+    onClick: () -> Unit,
+    onPlayClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .width(200.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(115.dp)
+                    .clip(RoundedCornerShape(10.dp))
+            ) {
+                AsyncImage(
+                    model = playlist.thumbnailUrl,
+                    contentDescription = playlist.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                            )
+                        )
+                )
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.88f),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier
+                        .padding(6.dp)
+                        .align(Alignment.TopStart)
+                ) {
+                    Text(
+                        text = playlist.category.uppercase(),
+                        color = Color.Black,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = onPlayClick,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .padding(2.dp)
+                        .align(Alignment.BottomEnd)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Play Playlist",
+                        tint = Color.Black,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = playlist.title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            Text(
+                text = playlist.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 11.sp
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "${playlist.trackCount} Tracks",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
