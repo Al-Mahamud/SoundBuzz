@@ -2,6 +2,21 @@
 
 A production-quality, responsive Android music application built with **Kotlin**, **Jetpack Compose**, **Material 3**, and **Clean Architecture (MVVM)**. SoundBuzz enables users to discover, organize, and stream music content sourced from YouTube using YouTube's permitted APIs and player mechanisms.
 
+## 📸 Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/home-dark.webp" width="230" alt="Home screen in dark theme"><br><sub><b>Home</b></sub></td>
+    <td align="center"><img src="docs/screenshots/player-dark.webp" width="230" alt="Now Playing screen with the Audio/Video switch and waveform seek bar"><br><sub><b>Now Playing</b> (audio-only mode)</sub></td>
+    <td align="center"><img src="docs/screenshots/search-dark.webp" width="230" alt="Search screen with genre grid"><br><sub><b>Search</b></sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/library-dark.webp" width="230" alt="Library screen with Liked songs card"><br><sub><b>Library</b></sub></td>
+    <td align="center"><img src="docs/screenshots/settings-dark.webp" width="230" alt="Settings screen with theme, accent color and pure black options"><br><sub><b>Settings</b> (theme options)</sub></td>
+    <td align="center"><img src="docs/screenshots/home-light-ocean.webp" width="230" alt="Home screen in light theme with the Ocean accent"><br><sub><b>Light theme</b> (Ocean accent)</sub></td>
+  </tr>
+</table>
+
 ---
 
 ## 📑 Table of Contents
