@@ -11,11 +11,14 @@ import com.example.musictube.data.local.entity.UserPreferenceEntity
 import com.example.musictube.data.remote.api.NetworkClient
 import com.example.musictube.data.remote.innertube.InnerTubeClient
 import com.example.musictube.data.remote.model.DefaultMusicCatalog
+import com.example.musictube.domain.model.AccentOption
 import com.example.musictube.domain.model.Artist
 import com.example.musictube.domain.model.Category
 import com.example.musictube.domain.model.CategoryPlaylist
 import com.example.musictube.domain.model.LyricLine
 import com.example.musictube.domain.model.Playlist
+import com.example.musictube.domain.model.ThemeMode
+import com.example.musictube.domain.model.ThemeSettings
 import com.example.musictube.domain.model.Track
 import com.example.musictube.domain.usecase.RecommendationEngine
 import com.example.musictube.utils.DiagnosticsLogger
@@ -41,6 +44,9 @@ class MusicRepository(
     private val userPreferenceDao = database.userPreferenceDao()
 
     private val PREF_API_KEY = "youtube_api_key"
+    private val PREF_THEME_MODE = "theme_mode"
+    private val PREF_THEME_ACCENT = "theme_accent"
+    private val PREF_THEME_PURE_BLACK = "theme_pure_black"
 
     fun getCategories(): Flow<List<Category>> = flow {
         var list = InnerTubeClient.browseMoodsAndGenres()
@@ -64,6 +70,31 @@ class MusicRepository(
         withContext(Dispatchers.IO) {
             userPreferenceDao.setPreference(UserPreferenceEntity(PREF_API_KEY, apiKey.trim()))
         }
+    }
+
+    fun getThemeSettingsFlow(): Flow<ThemeSettings> = combine(
+        userPreferenceDao.getPreferenceFlow(PREF_THEME_MODE),
+        userPreferenceDao.getPreferenceFlow(PREF_THEME_ACCENT),
+        userPreferenceDao.getPreferenceFlow(PREF_THEME_PURE_BLACK)
+    ) { mode, accent, pureBlack ->
+        val defaults = ThemeSettings()
+        ThemeSettings(
+            mode = mode?.value?.let { v -> ThemeMode.entries.firstOrNull { it.name == v } } ?: defaults.mode,
+            accent = accent?.value?.let { v -> AccentOption.entries.firstOrNull { it.name == v } } ?: defaults.accent,
+            pureBlack = pureBlack?.value?.toBooleanStrictOrNull() ?: defaults.pureBlack
+        )
+    }.flowOn(Dispatchers.IO)
+
+    suspend fun setThemeMode(mode: ThemeMode) = withContext(Dispatchers.IO) {
+        userPreferenceDao.setPreference(UserPreferenceEntity(PREF_THEME_MODE, mode.name))
+    }
+
+    suspend fun setThemeAccent(accent: AccentOption) = withContext(Dispatchers.IO) {
+        userPreferenceDao.setPreference(UserPreferenceEntity(PREF_THEME_ACCENT, accent.name))
+    }
+
+    suspend fun setPureBlack(enabled: Boolean) = withContext(Dispatchers.IO) {
+        userPreferenceDao.setPreference(UserPreferenceEntity(PREF_THEME_PURE_BLACK, enabled.toString()))
     }
 
     private suspend fun getActiveApiKey(): String {

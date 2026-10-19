@@ -1,10 +1,7 @@
 package com.example.musictube.presentation.components
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -26,8 +23,6 @@ fun YouTubePlayerViewContainer(
     playbackManager: PlaybackManager = MusicTubeApplication.instance.playbackManager
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    var activePlayer by remember { mutableStateOf<YouTubePlayer?>(null) }
-    var loadedVideoId by remember { mutableStateOf<String?>(null) }
 
     val lifecycleObserver = remember {
         object : DefaultLifecycleObserver {
@@ -52,13 +47,9 @@ fun YouTubePlayerViewContainer(
 
                 initialize(object : AbstractYouTubePlayerListener() {
                     override fun onReady(youTubePlayer: YouTubePlayer) {
-                        activePlayer = youTubePlayer
-                        loadedVideoId = videoId
+                        DiagnosticsLogger.logPlayer("onReady", "Player ready for: $videoId")
+                        // PlaybackManager loads the current track at the current position
                         playbackManager.attachYouTubePlayer(youTubePlayer)
-                        DiagnosticsLogger.logPlayer("onReady", "Player ready! Auto-loading: $videoId")
-                        if (videoId.isNotBlank()) {
-                            youTubePlayer.loadVideo(videoId, 0f)
-                        }
                     }
 
                     override fun onStateChange(youTubePlayer: YouTubePlayer, state: PlayerConstants.PlayerState) {
@@ -77,13 +68,6 @@ fun YouTubePlayerViewContainer(
                         playbackManager.onPlayerError(error)
                     }
                 }, options)
-            }
-        },
-        update = { _ ->
-            if (activePlayer != null && loadedVideoId != videoId && videoId.isNotBlank()) {
-                loadedVideoId = videoId
-                DiagnosticsLogger.logPlayer("update", "Video changed, loading: $videoId")
-                activePlayer?.loadVideo(videoId, 0f)
             }
         },
         onRelease = { playerView ->

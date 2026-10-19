@@ -1,5 +1,14 @@
 package com.example.musictube.playback
 
+import androidx.annotation.OptIn
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.example.musictube.data.repository.MusicRepository
 import com.example.musictube.domain.model.PlayState
 import com.example.musictube.domain.model.PlayerState
@@ -7,20 +16,27 @@ import com.example.musictube.domain.model.RepeatMode
 import com.example.musictube.domain.model.Track
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.PlayerConstants
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.YouTubePlayer
-import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.AbstractYouTubePlayerListener
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import android.content.Context
-import android.view.ViewGroup
-import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.options.IFramePlayerOptions
-import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+/**
+ * Two playback engines:
+ * - Audio mode (default): audio-only stream resolved by [AudioStreamResolver], played by ExoPlayer.
+ * - Video mode ("Watch Video"): the embedded YouTube IFrame player.
+ * Only one engine is active at a time; toggling hands the position over to the other one.
+ */
+@OptIn(UnstableApi::class)
 class PlaybackManager(
     private val repository: MusicRepository,
     private val context: Context
@@ -39,14 +55,149 @@ class PlaybackManager(
     private var activeYouTubePlayer: YouTubePlayer? = null
     private var isPlayerReady = false
 
+    private val isAudioMode: Boolean
+        get() = !_playerState.value.isVideoVisible
+
+    // Set when audio extraction failed and we fell back to the YouTube player for the current track
+    private var autoSwitchedToVideo = false
+    private var resolveJob: Job? = null
+    private var progressJob: Job? = null
+    private var retriedVideoId: String? = null
+
+    private val audioListener = object : Player.Listener {
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (!isAudioMode) return
+            when (playbackState) {
+                Player.STATE_BUFFERING -> if (audioPlayer.playWhenReady) {
+                    _playerState.update { it.copy(playState = PlayState.BUFFERING) }
+                }
+                Player.STATE_READY -> {
+                    val durationMs = audioPlayer.duration
+                    _playerState.update {
+                        it.copy(
+                            playState = if (audioPlayer.playWhenReady) PlayState.PLAYING else PlayState.PAUSED,
+                            durationSeconds = if (durationMs != C.TIME_UNSET) durationMs / 1000f else it.durationSeconds,
+                            errorMessage = null
+                        )
+                    }
+                }
+                Player.STATE_ENDED -> handleTrackEnded()
+                else -> {}
+            }
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (!isAudioMode) return
+            if (isPlaying) {
+                _playerState.update { it.copy(playState = PlayState.PLAYING) }
+                startProgressUpdates()
+            } else {
+                stopProgressUpdates()
+                _playerState.update { it.copy(currentPositionSeconds = audioPlayer.currentPosition / 1000f) }
+            }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            if (!isAudioMode) return
+            com.example.musictube.utils.DiagnosticsLogger.logPlayer("audio onError", "${error.errorCodeName}: ${error.message}")
+            val track = _playerState.value.currentTrack ?: return
+            if (retriedVideoId != track.youtubeVideoId) {
+                // Stream links expire or get rejected; resolve a fresh one once before giving up
+                retriedVideoId = track.youtubeVideoId
+                startAudio(track, audioPlayer.currentPosition / 1000f, playWhenReady = true, forceRefresh = true)
+            } else {
+                fallbackToVideo()
+            }
+        }
+    }
+
+    private val audioPlayer: ExoPlayer = ExoPlayer.Builder(context)
+        .setMediaSourceFactory(DefaultMediaSourceFactory(YouTubeAudioDataSource.factory()))
+        .setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                .build(),
+            /* handleAudioFocus = */ true
+        )
+        .setHandleAudioBecomingNoisy(true)
+        .setWakeMode(C.WAKE_MODE_NETWORK)
+        .build()
+        .apply { addListener(audioListener) }
+
+    private fun startAudio(track: Track, startSeconds: Float, playWhenReady: Boolean, forceRefresh: Boolean = false) {
+        resolveJob?.cancel()
+        stopProgressUpdates()
+        audioPlayer.stop()
+        resolveJob = scope.launch {
+            try {
+                val audio = AudioStreamResolver.resolve(track.youtubeVideoId, forceRefresh)
+                if (!isAudioMode || _playerState.value.currentTrack?.youtubeVideoId != track.youtubeVideoId) return@launch
+                audioPlayer.setMediaItem(MediaItem.fromUri(audio.url), (startSeconds * 1000).toLong())
+                audioPlayer.playWhenReady = playWhenReady
+                audioPlayer.prepare()
+                _playerState.update { it.copy(audioFormat = audio.label) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                com.example.musictube.utils.DiagnosticsLogger.logPlayer("startAudio", "Audio resolve failed for ${track.youtubeVideoId}: ${e.message}")
+                if (isAudioMode && _playerState.value.currentTrack?.youtubeVideoId == track.youtubeVideoId) {
+                    fallbackToVideo()
+                }
+            }
+        }
+    }
+
+    private fun stopAudio() {
+        resolveJob?.cancel()
+        stopProgressUpdates()
+        audioPlayer.stop()
+        audioPlayer.clearMediaItems()
+    }
+
+    /** Plays the current track through the YouTube player when no audio-only stream works. */
+    private fun fallbackToVideo() {
+        autoSwitchedToVideo = true
+        _playerState.update {
+            it.copy(
+                isVideoVisible = true,
+                audioFormat = null,
+                playState = PlayState.BUFFERING,
+                errorMessage = "Audio-only stream unavailable. Playing through the YouTube player instead."
+            )
+        }
+        stopAudio()
+        val track = _playerState.value.currentTrack ?: return
+        activeYouTubePlayer?.loadVideo(track.youtubeVideoId, _playerState.value.currentPositionSeconds)
+    }
+
+    private fun startProgressUpdates() {
+        if (progressJob?.isActive == true) return
+        progressJob = scope.launch {
+            while (isActive) {
+                _playerState.update { it.copy(currentPositionSeconds = audioPlayer.currentPosition / 1000f) }
+                delay(500)
+            }
+        }
+    }
+
+    private fun stopProgressUpdates() {
+        progressJob?.cancel()
+        progressJob = null
+    }
+
     fun attachYouTubePlayer(player: YouTubePlayer) {
         activeYouTubePlayer = player
         isPlayerReady = true
         com.example.musictube.utils.DiagnosticsLogger.logPlayer("attachYouTubePlayer", "Player attached to PlaybackManager")
+        if (isAudioMode) return
         _playerState.value.currentTrack?.let { track ->
+            val position = _playerState.value.currentPositionSeconds
             if (_playerState.value.playState == PlayState.PLAYING || _playerState.value.playState == PlayState.BUFFERING) {
                 com.example.musictube.utils.DiagnosticsLogger.logPlayer("attachYouTubePlayer -> loadVideo", track.youtubeVideoId)
-                player.loadVideo(track.youtubeVideoId, _playerState.value.currentPositionSeconds)
+                player.loadVideo(track.youtubeVideoId, position)
+            } else {
+                player.cueVideo(track.youtubeVideoId, position)
             }
         }
     }
@@ -59,6 +210,7 @@ class PlaybackManager(
 
     fun onPlayerStateChange(state: PlayerConstants.PlayerState) {
         com.example.musictube.utils.DiagnosticsLogger.logPlayer("onStateChange", state.name)
+        if (isAudioMode) return
         when (state) {
             PlayerConstants.PlayerState.PLAYING -> {
                 _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
@@ -77,15 +229,18 @@ class PlaybackManager(
     }
 
     fun onCurrentSecond(second: Float) {
+        if (isAudioMode) return
         _playerState.update { it.copy(currentPositionSeconds = second) }
     }
 
     fun onVideoDuration(duration: Float) {
+        if (isAudioMode) return
         _playerState.update { it.copy(durationSeconds = duration) }
     }
 
     fun onPlayerError(error: PlayerConstants.PlayerError) {
         com.example.musictube.utils.DiagnosticsLogger.logPlayer("onError", "${error.name} (Code: $error)")
+        if (isAudioMode) return
         val shouldSkip = when (error) {
             PlayerConstants.PlayerError.VIDEO_NOT_PLAYABLE_IN_EMBEDDED_PLAYER -> true
             PlayerConstants.PlayerError.VIDEO_NOT_FOUND -> true
@@ -125,22 +280,35 @@ class PlaybackManager(
             _currentQueueIndex.value = index
         }
 
+        // A fallback to the YouTube player only applies to the track whose audio failed
+        val revertToAudio = autoSwitchedToVideo
+        autoSwitchedToVideo = false
+        retriedVideoId = null
+
         _playerState.update {
             it.copy(
                 currentTrack = track,
                 playState = PlayState.BUFFERING,
                 currentPositionSeconds = 0f,
                 durationSeconds = if (track.durationSeconds > 0) track.durationSeconds.toFloat() else 0f,
+                isVideoVisible = if (revertToAudio) false else it.isVideoVisible,
+                audioFormat = null,
                 errorMessage = null
             )
         }
 
-        com.example.musictube.utils.DiagnosticsLogger.logPlayer("playTrack", "${track.title} [${track.youtubeVideoId}]")
-        val player = activeYouTubePlayer
-        if (player != null && isPlayerReady) {
-            com.example.musictube.utils.DiagnosticsLogger.logPlayer("playTrack", "player.loadVideo(${track.youtubeVideoId})")
-            player.loadVideo(track.youtubeVideoId, 0f)
-            _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
+        com.example.musictube.utils.DiagnosticsLogger.logPlayer("playTrack", "${track.title} [${track.youtubeVideoId}] audioMode=$isAudioMode")
+        if (isAudioMode) {
+            activeYouTubePlayer?.pause()
+            startAudio(track, 0f, playWhenReady = true)
+        } else {
+            stopAudio()
+            val player = activeYouTubePlayer
+            if (player != null && isPlayerReady) {
+                com.example.musictube.utils.DiagnosticsLogger.logPlayer("playTrack", "player.loadVideo(${track.youtubeVideoId})")
+                player.loadVideo(track.youtubeVideoId, 0f)
+                _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
+            }
         }
 
         // Start persistent foreground media service
@@ -156,12 +324,21 @@ class PlaybackManager(
         val currentState = _playerState.value.playState
         val player = activeYouTubePlayer
         if (currentState == PlayState.PLAYING) {
-            player?.pause()
+            if (isAudioMode) audioPlayer.pause() else player?.pause()
             _playerState.update { it.copy(playState = PlayState.PAUSED) }
         } else if (currentState == PlayState.PAUSED || currentState == PlayState.IDLE) {
             val track = _playerState.value.currentTrack
             if (track != null) {
-                player?.play()
+                if (isAudioMode) {
+                    if (audioPlayer.mediaItemCount == 0 || audioPlayer.playbackState == Player.STATE_IDLE) {
+                        startAudio(track, _playerState.value.currentPositionSeconds, playWhenReady = true)
+                    } else {
+                        if (audioPlayer.playbackState == Player.STATE_ENDED) audioPlayer.seekTo(0)
+                        audioPlayer.play()
+                    }
+                } else {
+                    player?.play()
+                }
                 _playerState.update { it.copy(playState = PlayState.PLAYING) }
             }
         }
@@ -169,7 +346,11 @@ class PlaybackManager(
 
     fun seekTo(seconds: Float) {
         _playerState.update { it.copy(currentPositionSeconds = seconds) }
-        activeYouTubePlayer?.seekTo(seconds)
+        if (isAudioMode) {
+            audioPlayer.seekTo((seconds * 1000).toLong())
+        } else {
+            activeYouTubePlayer?.seekTo(seconds)
+        }
     }
 
     fun next() {
@@ -225,7 +406,30 @@ class PlaybackManager(
     }
 
     fun toggleVideoVisibility() {
-        _playerState.update { it.copy(isVideoVisible = !it.isVideoVisible) }
+        val state = _playerState.value
+        val track = state.currentTrack
+        val wasPlaying = state.playState == PlayState.PLAYING || state.playState == PlayState.BUFFERING
+        autoSwitchedToVideo = false
+
+        if (state.isVideoVisible) {
+            // Video -> audio: the YouTube view leaves composition, ExoPlayer resumes from the same spot
+            activeYouTubePlayer?.pause()
+            _playerState.update { it.copy(isVideoVisible = false, errorMessage = null) }
+            if (track != null) startAudio(track, state.currentPositionSeconds, playWhenReady = wasPlaying)
+        } else {
+            // Audio -> video: the YouTube view is composed and attachYouTubePlayer() resumes playback
+            _playerState.update { it.copy(isVideoVisible = true, audioFormat = null, errorMessage = null) }
+            stopAudio()
+            if (track != null) {
+                activeYouTubePlayer?.let { player ->
+                    if (wasPlaying) {
+                        player.loadVideo(track.youtubeVideoId, state.currentPositionSeconds)
+                    } else {
+                        player.cueVideo(track.youtubeVideoId, state.currentPositionSeconds)
+                    }
+                }
+            }
+        }
     }
 
     fun playNext(track: Track) {
@@ -255,6 +459,7 @@ class PlaybackManager(
                     playTrack(q[newIndex])
                 } else {
                     _currentQueueIndex.value = -1
+                    stopAudio()
                     _playerState.update { it.copy(currentTrack = null, playState = PlayState.IDLE) }
                 }
             }
@@ -262,6 +467,7 @@ class PlaybackManager(
     }
 
     fun clearQueue() {
+        stopAudio()
         _queue.value = emptyList()
         _currentQueueIndex.value = -1
         _playerState.update { it.copy(currentTrack = null, playState = PlayState.IDLE) }
@@ -274,9 +480,13 @@ class PlaybackManager(
         } catch (e: Exception) {
             // ignore
         }
+        stopAudio()
+        // Keep the user's audio/video choice for the next session (but not an automatic fallback)
+        val keepVideoMode = _playerState.value.isVideoVisible && !autoSwitchedToVideo
+        autoSwitchedToVideo = false
         _queue.value = emptyList()
         _currentQueueIndex.value = -1
-        _playerState.update { PlayerState() }
+        _playerState.update { PlayerState(isVideoVisible = keepVideoMode) }
         PlaybackService.stopService(context)
     }
 
@@ -299,7 +509,7 @@ class PlaybackManager(
         when (_playerState.value.repeatMode) {
             RepeatMode.ONE -> {
                 seekTo(0f)
-                activeYouTubePlayer?.play()
+                if (isAudioMode) audioPlayer.play() else activeYouTubePlayer?.play()
             }
             RepeatMode.ALL -> {
                 next()

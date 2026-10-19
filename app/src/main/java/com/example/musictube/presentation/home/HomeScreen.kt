@@ -2,40 +2,34 @@ package com.example.musictube.presentation.home
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.ui.res.painterResource
-import com.example.musictube.R
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -47,22 +41,31 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
+import com.example.musictube.R
 import com.example.musictube.domain.model.Artist
 import com.example.musictube.domain.model.Category
 import com.example.musictube.domain.model.CategoryPlaylist
 import com.example.musictube.domain.model.Track
 import com.example.musictube.presentation.components.AddToPlaylistDialog
+import com.example.musictube.presentation.components.ArtworkImage
 import com.example.musictube.presentation.components.ErrorRetryView
+import com.example.musictube.presentation.components.PillChip
 import com.example.musictube.presentation.components.SkeletonCardItem
 import com.example.musictube.presentation.components.TrackItemCard
+import com.example.musictube.presentation.components.TrackItemRow
 import com.example.musictube.presentation.components.TrackOptionsMenuBottomSheet
+import java.util.Calendar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,165 +80,117 @@ fun HomeScreen(
     var selectedTrackForMenu by remember { mutableStateOf<Track?>(null) }
     var selectedTrackForPlaylist by remember { mutableStateOf<Track?>(null) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(
-                            painter = painterResource(id = R.drawable.app_logo),
-                            contentDescription = "SoundBuzz Logo",
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "SoundBuzz",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onBackground
+    val play: (Track, List<Track>) -> Unit = { track, queue ->
+        viewModel.playTrack(track, queue)
+        onNavigateToPlayer(track.youtubeVideoId)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        when {
+            uiState.isLoading -> {
+                HomeLoadingSkeleton()
+            }
+            uiState.error != null && uiState.trending.isEmpty() -> {
+                ErrorRetryView(
+                    message = uiState.error ?: "Error loading home screen",
+                    onRetry = { viewModel.loadHomeData() }
+                )
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(top = 12.dp, bottom = 32.dp)
+                ) {
+                    item { HomeHeader() }
+
+                    item {
+                        MoodChipsRow(
+                            categories = uiState.categories,
+                            onCategoryClick = onNavigateToCategory
                         )
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            when {
-                uiState.isLoading -> {
-                    HomeLoadingSkeleton()
-                }
-                uiState.error != null && uiState.trending.isEmpty() -> {
-                    ErrorRetryView(
-                        message = uiState.error ?: "Error loading home screen",
-                        onRetry = { viewModel.loadHomeData() }
-                    )
-                }
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 90.dp)
-                    ) {
-                        // 1. Recently Played (if available)
-                        if (uiState.recentlyPlayed.isNotEmpty()) {
-                            item {
-                                SectionHeader(title = "Recently Played")
-                                LazyRow(
-                                    contentPadding = PaddingValues(horizontal = 16.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    items(uiState.recentlyPlayed) { track ->
-                                        TrackItemCard(
-                                            track = track,
-                                            onTrackClick = {
-                                                viewModel.playTrack(track, uiState.recentlyPlayed)
-                                                onNavigateToPlayer(track.youtubeVideoId)
+
+                    // Hero: continue the last song, or the top recommendation for new listeners
+                    val continueTrack = uiState.recentlyPlayed.firstOrNull()
+                    val heroTrack = continueTrack ?: uiState.recommendations.firstOrNull()
+                    if (heroTrack != null) {
+                        item {
+                            HeroTrackCard(
+                                track = heroTrack,
+                                label = if (continueTrack != null) "CONTINUE LISTENING" else "TOP PICK FOR YOU",
+                                onPlay = {
+                                    play(heroTrack, if (continueTrack != null) uiState.recentlyPlayed else uiState.recommendations)
+                                }
+                            )
+                        }
+                    }
+
+                    if (uiState.recommendations.isNotEmpty()) {
+                        item {
+                            SectionHeader(title = "Made for you")
+                            TrackCardsRow(uiState.recommendations) { play(it, uiState.recommendations) }
+                        }
+                    }
+
+                    if (uiState.trending.isNotEmpty()) {
+                        item { SectionHeader(title = "Trending now") }
+                        itemsIndexed(uiState.trending.take(5), key = { _, t -> "trending_${t.youtubeVideoId}" }) { index, track ->
+                            TrackItemRow(
+                                track = track,
+                                onTrackClick = { play(track, uiState.trending) },
+                                onMoreOptionsClick = { selectedTrackForMenu = track },
+                                leading = {
+                                    Text(
+                                        text = "%02d".format(index + 1),
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = if (index == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Start,
+                                        modifier = Modifier.width(30.dp)
+                                    )
+                                }
+                            )
+                        }
+                    }
+
+                    if (uiState.recentlyPlayed.size > 1) {
+                        item {
+                            SectionHeader(title = "Recently played")
+                            TrackCardsRow(uiState.recentlyPlayed) { play(it, uiState.recentlyPlayed) }
+                        }
+                    }
+
+                    if (uiState.categoryPlaylists.isNotEmpty()) {
+                        item {
+                            SectionHeader(title = "Featured playlists")
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 20.dp),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                items(uiState.categoryPlaylists) { playlist ->
+                                    CategoryPlaylistCard(
+                                        playlist = playlist,
+                                        onClick = { onNavigateToCategory(playlist.category) },
+                                        onPlayClick = {
+                                            viewModel.playCategoryPlaylist(playlist)
+                                            if (playlist.tracks.isNotEmpty()) {
+                                                onNavigateToPlayer(playlist.tracks.first().youtubeVideoId)
                                             }
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(18.dp))
-                            }
-                        }
-
-                        // 2. Recommended For You
-                        item {
-                            SectionHeader(title = "Recommended For You")
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(uiState.recommendations) { track ->
-                                    TrackItemCard(
-                                        track = track,
-                                        onTrackClick = {
-                                            viewModel.playTrack(track, uiState.recommendations)
-                                            onNavigateToPlayer(track.youtubeVideoId)
                                         }
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(18.dp))
                         }
+                    }
 
-                        // 3. Trending / Popular
+                    if (uiState.popularArtists.isNotEmpty()) {
                         item {
-                            SectionHeader(title = "Trending / Popular")
+                            SectionHeader(title = "Popular artists")
                             LazyRow(
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(uiState.trending) { track ->
-                                    TrackItemCard(
-                                        track = track,
-                                        onTrackClick = {
-                                            viewModel.playTrack(track, uiState.trending)
-                                            onNavigateToPlayer(track.youtubeVideoId)
-                                        }
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(18.dp))
-                        }
-
-                        // 4. New Releases
-                        item {
-                            SectionHeader(title = "New Releases")
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(uiState.newReleases) { track ->
-                                    TrackItemCard(
-                                        track = track,
-                                        onTrackClick = {
-                                            viewModel.playTrack(track, uiState.newReleases)
-                                            onNavigateToPlayer(track.youtubeVideoId)
-                                        }
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(18.dp))
-                        }
-
-                        // 5. Different Category Playlists
-                        if (uiState.categoryPlaylists.isNotEmpty()) {
-                            item {
-                                SectionHeader(title = "Featured Category Playlists")
-                                LazyRow(
-                                    contentPadding = PaddingValues(horizontal = 16.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                                ) {
-                                    items(uiState.categoryPlaylists) { playlist ->
-                                        CategoryPlaylistCard(
-                                            playlist = playlist,
-                                            onClick = { onNavigateToCategory(playlist.category) },
-                                            onPlayClick = {
-                                                viewModel.playCategoryPlaylist(playlist)
-                                                if (playlist.tracks.isNotEmpty()) {
-                                                    onNavigateToPlayer(playlist.tracks.first().youtubeVideoId)
-                                                }
-                                            }
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(18.dp))
-                            }
-                        }
-
-                        // 6. Popular Artists
-                        item {
-                            SectionHeader(title = "Popular Artists")
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                contentPadding = PaddingValues(horizontal = 20.dp),
                                 horizontalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                                 items(uiState.popularArtists) { artist ->
@@ -245,64 +200,27 @@ fun HomeScreen(
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(18.dp))
                         }
+                    }
 
-                        // 6. Music Categories
+                    if (uiState.newReleases.isNotEmpty()) {
                         item {
-                            SectionHeader(title = "Music Categories")
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(uiState.categories) { category ->
-                                    CategoryCardItem(
-                                        category = category,
-                                        onClick = { onNavigateToCategory(category.name) }
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(18.dp))
+                            SectionHeader(title = "New releases")
+                            TrackCardsRow(uiState.newReleases) { play(it, uiState.newReleases) }
                         }
+                    }
 
-                        // 7. Hit Songs
+                    if (uiState.hitSongs.isNotEmpty()) {
                         item {
-                            SectionHeader(title = "Hit Songs")
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(uiState.hitSongs) { track ->
-                                    TrackItemCard(
-                                        track = track,
-                                        onTrackClick = {
-                                            viewModel.playTrack(track, uiState.hitSongs)
-                                            onNavigateToPlayer(track.youtubeVideoId)
-                                        }
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(18.dp))
+                            SectionHeader(title = "All-time hits")
+                            TrackCardsRow(uiState.hitSongs) { play(it, uiState.hitSongs) }
                         }
+                    }
 
-                        // 8. Regional/Genre-based music
+                    if (uiState.regionalMusic.isNotEmpty()) {
                         item {
-                            SectionHeader(title = "Regional Hits & Vibes")
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(uiState.regionalMusic) { track ->
-                                    TrackItemCard(
-                                        track = track,
-                                        onTrackClick = {
-                                            viewModel.playTrack(track, uiState.regionalMusic)
-                                            onNavigateToPlayer(track.youtubeVideoId)
-                                        }
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(24.dp))
+                            SectionHeader(title = "Regional hits & vibes")
+                            TrackCardsRow(uiState.regionalMusic) { play(it, uiState.regionalMusic) }
                         }
                     }
                 }
@@ -348,14 +266,169 @@ fun HomeScreen(
 }
 
 @Composable
-fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onBackground,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-    )
+private fun HomeHeader() {
+    val greeting = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
+        in 5..11 -> "Good morning"
+        in 12..16 -> "Good afternoon"
+        else -> "Good evening"
+    }
+    Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+        Row(
+            modifier = Modifier.height(44.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.logo_mark),
+                contentDescription = null,
+                modifier = Modifier.size(width = 44.dp, height = 26.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = buildAnnotatedString {
+                    append("Sound")
+                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("Buzz") }
+                },
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
+        Spacer(modifier = Modifier.height(20.dp))
+        Text(
+            text = greeting,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = "What's the vibe today?",
+            style = MaterialTheme.typography.headlineLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.semantics { heading() }
+        )
+    }
+}
+
+@Composable
+private fun MoodChipsRow(
+    categories: List<Category>,
+    onCategoryClick: (String) -> Unit
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(top = 20.dp, bottom = 4.dp)
+    ) {
+        item {
+            PillChip(label = "All", selected = true, onClick = {})
+        }
+        items(categories.take(12), key = { it.id }) { category ->
+            PillChip(
+                label = category.name,
+                selected = false,
+                onClick = { onCategoryClick(category.name) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun HeroTrackCard(
+    track: Track,
+    label: String,
+    onPlay: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(24.dp)
+    Row(
+        modifier = Modifier
+            .padding(start = 20.dp, end = 20.dp, top = 20.dp)
+            .fillMaxWidth()
+            .clip(shape)
+            .background(colors.surface)
+            .border(1.dp, colors.outlineVariant, shape)
+            .clickable(onClick = onPlay)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        ArtworkImage(
+            model = track.thumbnailUrl,
+            contentDescription = track.title,
+            modifier = Modifier.size(104.dp),
+            shape = RoundedCornerShape(18.dp)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, style = MaterialTheme.typography.labelSmall, color = colors.primary)
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = track.title,
+                style = MaterialTheme.typography.titleLarge,
+                color = colors.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = track.artist,
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(colors.primary),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.PlayArrow,
+                contentDescription = "Play ${track.title}",
+                tint = colors.onPrimary,
+                modifier = Modifier.size(28.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun TrackCardsRow(tracks: List<Track>, onTrackClick: (Track) -> Unit) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        items(tracks) { track ->
+            TrackItemCard(track = track, onTrackClick = { onTrackClick(track) })
+        }
+    }
+}
+
+@Composable
+fun SectionHeader(
+    title: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 8.dp, top = 28.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier
+                .weight(1f)
+                .semantics { heading() }
+        )
+        if (actionLabel != null && onAction != null) {
+            TextButton(onClick = onAction) {
+                Text(actionLabel, style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
 }
 
 @Composable
@@ -365,23 +438,28 @@ fun ArtistCircularItem(
 ) {
     Column(
         modifier = Modifier
-            .width(100.dp)
+            .width(96.dp)
+            .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        AsyncImage(
-            model = artist.imageUrl,
-            contentDescription = artist.name,
+        Box(
             modifier = Modifier
-                .size(90.dp)
-                .clip(CircleShape),
-            contentScale = ContentScale.Crop
-        )
+                .size(92.dp)
+                .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.55f), CircleShape)
+                .padding(5.dp)
+        ) {
+            ArtworkImage(
+                model = artist.imageUrl,
+                contentDescription = artist.name,
+                modifier = Modifier.matchParentSize(),
+                shape = CircleShape
+            )
+        }
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = artist.name,
             style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -389,40 +467,39 @@ fun ArtistCircularItem(
     }
 }
 
+/** Genre tile: deepened category color with a bright circle, white label. */
 @Composable
 fun CategoryCardItem(
     category: Category,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Surface(
-        modifier = Modifier
-            .width(140.dp)
-            .height(80.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick),
-        color = Color(category.primaryColor)
+    val base = Color(category.primaryColor)
+    Box(
+        modifier = modifier
+            .height(84.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(lerp(base, Color.Black, 0.45f))
+            .clickable(onClick = onClick)
     ) {
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            Color(category.primaryColor),
-                            Color(category.secondaryColor)
-                        )
-                    )
-                )
-                .padding(12.dp),
-            contentAlignment = Alignment.BottomStart
-        ) {
-            Text(
-                text = category.name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-        }
+                .size(76.dp)
+                .align(Alignment.TopEnd)
+                .offset(x = 18.dp, y = (-22).dp)
+                .clip(CircleShape)
+                .background(base)
+        )
+        Text(
+            text = category.name,
+            style = MaterialTheme.typography.titleLarge,
+            color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(horizontal = 14.dp, vertical = 12.dp)
+        )
     }
 }
 
@@ -430,21 +507,21 @@ fun CategoryCardItem(
 fun HomeLoadingSkeleton() {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
         items(4) {
             Column {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(0.4f)
-                        .height(20.dp)
-                        .clip(RoundedCornerShape(4.dp))
+                        .height(22.dp)
+                        .clip(RoundedCornerShape(8.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
                 LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     items(4) {
                         SkeletonCardItem()
@@ -461,98 +538,75 @@ fun CategoryPlaylistCard(
     onClick: () -> Unit,
     onPlayClick: () -> Unit
 ) {
-    Card(
+    val colors = MaterialTheme.colorScheme
+    Column(
         modifier = Modifier
-            .width(200.dp)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            .width(220.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick)
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(132.dp)
+                .clip(RoundedCornerShape(20.dp))
+        ) {
+            ArtworkImage(
+                model = playlist.thumbnailUrl,
+                contentDescription = playlist.title,
+                modifier = Modifier.matchParentSize(),
+                shape = RoundedCornerShape(20.dp)
+            )
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(115.dp)
-                    .clip(RoundedCornerShape(10.dp))
-            ) {
-                AsyncImage(
-                    model = playlist.thumbnailUrl,
-                    contentDescription = playlist.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
-                            )
-                        )
-                )
-                Surface(
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.88f),
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier
-                        .padding(6.dp)
-                        .align(Alignment.TopStart)
-                ) {
-                    Text(
-                        text = playlist.category.uppercase(),
-                        color = Color.Black,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-
-                IconButton(
-                    onClick = onPlayClick,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .padding(2.dp)
-                        .align(Alignment.BottomEnd)
-                        .background(MaterialTheme.colorScheme.primary, CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Play Playlist",
-                        tint = Color.Black,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = playlist.title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                    .matchParentSize()
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f))))
             )
-
-            Spacer(modifier = Modifier.height(2.dp))
-
             Text(
-                text = playlist.description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                fontSize = 11.sp
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = "${playlist.trackCount} Tracks",
+                text = playlist.category.uppercase(),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold
+                color = colors.onPrimary,
+                modifier = Modifier
+                    .padding(10.dp)
+                    .align(Alignment.TopStart)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(colors.primary)
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
             )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(10.dp)
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(colors.primary)
+                    .clickable(onClick = onPlayClick),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Play ${playlist.title}",
+                    tint = colors.onPrimary,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
         }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Text(
+            text = playlist.title,
+            style = MaterialTheme.typography.titleSmall,
+            color = colors.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = "${playlist.trackCount} tracks · ${playlist.description}",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }

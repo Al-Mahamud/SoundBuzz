@@ -22,7 +22,9 @@ data class PlayerState(
     val durationSeconds: Float = 0f,
     val isShuffleEnabled: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.OFF,
-    val isVideoVisible: Boolean = true,
+    // false = audio-only stream via ExoPlayer (low data), true = YouTube video player
+    val isVideoVisible: Boolean = false,
+    val audioFormat: String? = null,
     val errorMessage: String? = null
 ) {
     val isPlaying: Boolean

@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.musictube.MusicTubeApplication
 import com.example.musictube.data.repository.MusicRepository
+import com.example.musictube.domain.model.AccentOption
+import com.example.musictube.domain.model.ThemeMode
+import com.example.musictube.domain.model.ThemeSettings
 import com.example.musictube.playback.PlaybackManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -12,19 +15,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-enum class ThemeMode {
-    DARK,
-    LIGHT,
-    SYSTEM
-}
-
 class SettingsViewModel(
     private val repository: MusicRepository = MusicTubeApplication.instance.repository,
     private val playbackManager: PlaybackManager = MusicTubeApplication.instance.playbackManager
 ) : ViewModel() {
 
-    private val _themeMode = MutableStateFlow(ThemeMode.DARK)
-    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+    val themeSettings: StateFlow<ThemeSettings> = repository.getThemeSettingsFlow()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ThemeSettings())
 
     private val _autoplay = MutableStateFlow(true)
     val autoplay: StateFlow<Boolean> = _autoplay.asStateFlow()
@@ -44,7 +41,15 @@ class SettingsViewModel(
     val storageStatusMessage: StateFlow<String?> = _storageStatusMessage.asStateFlow()
 
     fun setThemeMode(mode: ThemeMode) {
-        _themeMode.value = mode
+        viewModelScope.launch { repository.setThemeMode(mode) }
+    }
+
+    fun setAccent(accent: AccentOption) {
+        viewModelScope.launch { repository.setThemeAccent(accent) }
+    }
+
+    fun setPureBlack(enabled: Boolean) {
+        viewModelScope.launch { repository.setPureBlack(enabled) }
     }
 
     fun toggleAutoplay() {

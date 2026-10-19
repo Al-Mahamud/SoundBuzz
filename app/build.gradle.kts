@@ -41,6 +41,8 @@ android {
         }
     }
     compileOptions {
+        // Required by NewPipeExtractor on minSdk < 33
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -82,9 +84,15 @@ dependencies {
 
     // Image loading
     implementation(libs.coil.compose)
+    implementation(libs.androidx.palette.ktx)
 
     // YouTube Player Core
     implementation(libs.youtube.player.core)
+
+    // Audio-only playback (stream extraction + ExoPlayer)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.newpipe.extractor)
+    coreLibraryDesugaring(libs.desugar.jdk.libs.nio)
 
     // Testing
     testImplementation(libs.junit)

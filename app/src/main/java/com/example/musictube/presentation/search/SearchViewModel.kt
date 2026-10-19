@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
 
 enum class SearchFilter(val label: String) {
     ALL("All"),
-    SONGS("Songs (Audio)"),
+    SONGS("Songs"),
     ARTISTS("Artists"),
     VIDEOS("Videos")
 }
@@ -47,6 +47,9 @@ class SearchViewModel(
     private val repository: MusicRepository = MusicTubeApplication.instance.repository,
     private val playbackManager: PlaybackManager = MusicTubeApplication.instance.playbackManager
 ) : ViewModel() {
+
+    // Genre tiles for the browse grid shown before the user types
+    val browseCategories = repository.getDefaultCategories()
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()

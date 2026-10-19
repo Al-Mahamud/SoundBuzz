@@ -8,15 +8,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.musictube.domain.model.ThemeSettings
 import com.example.musictube.navigation.MusicTubeApp
-import com.example.musictube.presentation.settings.SettingsViewModel
-import com.example.musictube.presentation.settings.ThemeMode
 import com.example.musictube.presentation.theme.MusicTubeTheme
 
 class MainActivity : ComponentActivity() {
@@ -39,17 +36,12 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            val settingsViewModel: SettingsViewModel = viewModel()
-            val themeMode by settingsViewModel.themeMode.collectAsState()
-            val systemDark = isSystemInDarkTheme()
+            // Saved in the preferences table, so every screen sees the same theme immediately
+            val repository = MusicTubeApplication.instance.repository
+            val themeFlow = remember { repository.getThemeSettingsFlow() }
+            val themeSettings by themeFlow.collectAsState(initial = ThemeSettings())
 
-            val isDark = when (themeMode) {
-                ThemeMode.DARK -> true
-                ThemeMode.LIGHT -> false
-                ThemeMode.SYSTEM -> systemDark
-            }
-
-            MusicTubeTheme(darkTheme = isDark) {
+            MusicTubeTheme(settings = themeSettings) {
                 MusicTubeApp()
             }
         }
