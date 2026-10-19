@@ -1,5 +1,7 @@
 package com.example.musictube.presentation.search
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,15 +30,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import coil.compose.AsyncImage
 import com.example.musictube.domain.model.Artist
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -46,6 +46,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -53,6 +57,9 @@ import com.example.musictube.domain.model.Track
 import com.example.musictube.presentation.components.AddToPlaylistDialog
 import com.example.musictube.presentation.components.EmptyStateView
 import com.example.musictube.presentation.components.ErrorRetryView
+import com.example.musictube.presentation.components.SegmentOption
+import com.example.musictube.presentation.components.SegmentedControl
+import com.example.musictube.presentation.home.CategoryCardItem
 import com.example.musictube.presentation.components.SkeletonRowItem
 import com.example.musictube.presentation.components.TrackItemRow
 import com.example.musictube.presentation.components.TrackOptionsMenuBottomSheet
@@ -62,6 +69,7 @@ import com.example.musictube.presentation.components.TrackOptionsMenuBottomSheet
 fun SearchScreen(
     viewModel: SearchViewModel = viewModel(),
     onNavigateToArtist: (String) -> Unit,
+    onNavigateToCategory: (String) -> Unit,
     onNavigateToPlayer: (String) -> Unit
 ) {
     val query by viewModel.query.collectAsState()
@@ -76,227 +84,202 @@ fun SearchScreen(
     var selectedTrackForMenu by remember { mutableStateOf<Track?>(null) }
     var selectedTrackForPlaylist by remember { mutableStateOf<Track?>(null) }
 
-    val quickKeywords = listOf("Pop", "Rock", "Lo-Fi", "EDM", "Bangla", "Bollywood", "Hip-Hop", "Arijit Singh", "The Weeknd")
+    val colors = MaterialTheme.colorScheme
+    val filters = SearchFilter.entries
 
-    Scaffold { innerPadding ->
-        Column(
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+    ) {
+        Text(
+            text = "Search",
+            style = MaterialTheme.typography.headlineLarge,
+            color = colors.onBackground,
+            modifier = Modifier
+                .padding(start = 20.dp, end = 20.dp, top = 20.dp)
+                .semantics { heading() }
+        )
+
+        // Bright, inverted search field so it reads as the screen's main action
+        TextField(
+            value = query,
+            onValueChange = { viewModel.onQueryChange(it) },
+            placeholder = { Text("Songs, artists, moods…", style = MaterialTheme.typography.bodyLarge) },
+            leadingIcon = {
+                Icon(imageVector = Icons.Default.Search, contentDescription = null)
+            },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { viewModel.clearSearch() }) {
+                        Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear search")
+                    }
+                }
+            },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyLarge,
+            shape = RoundedCornerShape(16.dp),
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = colors.inverseSurface,
+                unfocusedContainerColor = colors.inverseSurface,
+                focusedTextColor = colors.inverseOnSurface,
+                unfocusedTextColor = colors.inverseOnSurface,
+                focusedLeadingIconColor = colors.inverseOnSurface,
+                unfocusedLeadingIconColor = colors.inverseOnSurface,
+                focusedTrailingIconColor = colors.inverseOnSurface,
+                unfocusedTrailingIconColor = colors.inverseOnSurface,
+                focusedPlaceholderColor = colors.inverseOnSurface.copy(alpha = 0.6f),
+                unfocusedPlaceholderColor = colors.inverseOnSurface.copy(alpha = 0.6f),
+                cursorColor = colors.primary,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, top = 16.dp)
+                .semantics { contentDescription = "Search songs, artists or moods" }
+        )
+
+        SegmentedControl(
+            options = filters.map { SegmentOption(it.label) },
+            selectedIndex = filters.indexOf(selectedFilter),
+            onSelect = { viewModel.setFilter(filters[it]) },
+            fillWidth = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 8.dp)
+        )
+
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .weight(1f)
         ) {
-            // Search Input Field
-            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { viewModel.onQueryChange(it) },
-                    placeholder = { Text("Search music, artists, videos...") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.clearSearch() }) {
-                                Icon(
-                                    imageVector = Icons.Default.Clear,
-                                    contentDescription = "Clear",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            // Search Filter Mode Chips (All, Songs, Artists, Videos)
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(bottom = 6.dp)
-            ) {
-                items(SearchFilter.values()) { filter ->
-                    FilterChip(
-                        selected = selectedFilter == filter,
-                        onClick = { viewModel.setFilter(filter) },
-                        label = { Text(filter.label) }
-                    )
-                }
-            }
-
-            // Quick Category Chips
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(bottom = 8.dp)
-            ) {
-                items(quickKeywords) { keyword ->
-                    FilterChip(
-                        selected = query.equals(keyword, ignoreCase = true),
-                        onClick = { viewModel.onQueryChange(keyword) },
-                        label = { Text(keyword) }
-                    )
-                }
-            }
-
-            // Body Content
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f)
-            ) {
-                when {
-                    isLoading -> {
-                        LazyColumn(
-                            contentPadding = PaddingValues(bottom = 90.dp)
-                        ) {
-                            items(8) {
-                                SkeletonRowItem()
-                            }
+            when {
+                isLoading -> {
+                    LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+                        items(8) {
+                            SkeletonRowItem()
                         }
                     }
-                    error != null && searchResults.isEmpty() -> {
-                        ErrorRetryView(
-                            message = error ?: "Search error",
-                            onRetry = { viewModel.retrySearch() }
-                        )
-                    }
-                    query.isNotBlank() && searchResults.isEmpty() && artistResults.isEmpty() && !isLoading -> {
-                        EmptyStateView(
-                            message = "No music found. Try searching with another name."
-                        )
-                    }
-                    query.isBlank() -> {
-                        // Display Recent Searches
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 16.dp)
-                        ) {
-                            if (recentSearches.isNotEmpty()) {
+                }
+                error != null && searchResults.isEmpty() -> {
+                    ErrorRetryView(
+                        message = error ?: "Search error",
+                        onRetry = { viewModel.retrySearch() }
+                    )
+                }
+                query.isNotBlank() && searchResults.isEmpty() && artistResults.isEmpty() && !isLoading -> {
+                    EmptyStateView(
+                        message = "No music found. Try searching with another name."
+                    )
+                }
+                query.isBlank() -> {
+                    // Recent searches + browse grid
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
+                        if (recentSearches.isNotEmpty()) {
+                            item {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 20.dp, end = 8.dp, top = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "Recent Searches",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
+                                        text = "RECENT",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = colors.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f)
                                     )
                                     TextButton(onClick = { viewModel.clearAllRecentSearches() }) {
-                                        Text("Clear All")
+                                        Text("Clear")
                                     }
                                 }
-
-                                LazyColumn(
-                                    contentPadding = PaddingValues(bottom = 90.dp)
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = 20.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     items(recentSearches) { recent ->
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(8.dp))
-                                            .clickable { viewModel.onQueryChange(recent) }
-                                            .padding(vertical = 10.dp, horizontal = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.History,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(12.dp))
-                                            Text(
-                                                text = recent,
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            IconButton(
-                                                onClick = { viewModel.deleteRecentSearch(recent) },
-                                                modifier = Modifier.size(28.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Close,
-                                                    contentDescription = "Remove",
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
+                                        RecentSearchChip(
+                                            text = recent,
+                                            onClick = { viewModel.onQueryChange(recent) },
+                                            onRemove = { viewModel.deleteRecentSearch(recent) }
+                                        )
                                     }
                                 }
-                            } else {
-                                EmptyStateView(
-                                    message = "Search for your favorite songs, artists, and playlists"
-                                )
+                            }
+                        }
+
+                        item {
+                            Text(
+                                text = "Browse moods & genres",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = colors.onBackground,
+                                modifier = Modifier
+                                    .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 14.dp)
+                                    .semantics { heading() }
+                            )
+                        }
+
+                        items(viewModel.browseCategories.chunked(2)) { pair ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                pair.forEach { category ->
+                                    CategoryCardItem(
+                                        category = category,
+                                        onClick = { onNavigateToCategory(category.name) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
                             }
                         }
                     }
-                    else -> {
-                        // Display Search Results & Artists
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(bottom = 90.dp)
-                        ) {
-                            if (selectedFilter == SearchFilter.ARTISTS) {
+                }
+                else -> {
+                    // Search results & artists
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
+                        if (selectedFilter == SearchFilter.ARTISTS) {
+                            items(artistResults) { artist ->
+                                ArtistItemRow(
+                                    artist = artist,
+                                    onClick = { onNavigateToArtist(artist.name) }
+                                )
+                            }
+                        } else {
+                            if (artistResults.isNotEmpty() && selectedFilter == SearchFilter.ALL) {
+                                item { ResultsHeader("Artists") }
                                 items(artistResults) { artist ->
                                     ArtistItemRow(
                                         artist = artist,
                                         onClick = { onNavigateToArtist(artist.name) }
                                     )
                                 }
-                            } else {
-                                if (artistResults.isNotEmpty() && selectedFilter == SearchFilter.ALL) {
-                                    item {
-                                        Text(
-                                            text = "Artists",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                                        )
-                                    }
-                                    items(artistResults) { artist ->
-                                        ArtistItemRow(
-                                            artist = artist,
-                                            onClick = { onNavigateToArtist(artist.name) }
-                                        )
-                                    }
-                                    if (searchResults.isNotEmpty()) {
-                                        item {
-                                            Text(
-                                                text = "Tracks & Videos",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                                            )
-                                        }
-                                    }
+                                if (searchResults.isNotEmpty()) {
+                                    item { ResultsHeader("Songs & videos") }
                                 }
-                                items(searchResults) { track ->
-                                    TrackItemRow(
-                                        track = track,
-                                        onTrackClick = {
-                                            viewModel.playTrack(track, searchResults)
-                                            onNavigateToPlayer(track.youtubeVideoId)
-                                        },
-                                        onMoreOptionsClick = {
-                                            selectedTrackForMenu = track
-                                        }
-                                    )
-                                }
+                            }
+                            items(searchResults) { track ->
+                                TrackItemRow(
+                                    track = track,
+                                    onTrackClick = {
+                                        viewModel.playTrack(track, searchResults)
+                                        onNavigateToPlayer(track.youtubeVideoId)
+                                    },
+                                    onMoreOptionsClick = {
+                                        selectedTrackForMenu = track
+                                    }
+                                )
                             }
                         }
                     }
@@ -352,7 +335,7 @@ fun ArtistItemRow(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         AsyncImage(
@@ -379,6 +362,61 @@ fun ArtistItemRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun ResultsHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleLarge,
+        color = MaterialTheme.colorScheme.onBackground,
+        modifier = Modifier
+            .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 6.dp)
+            .semantics { heading() }
+    )
+}
+
+@Composable
+private fun RecentSearchChip(
+    text: String,
+    onClick: () -> Unit,
+    onRemove: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .height(36.dp)
+            .clip(CircleShape)
+            .background(colors.surface)
+            .border(1.dp, colors.outlineVariant, CircleShape)
+            .clickable(onClick = onClick)
+            .padding(start = 12.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.History,
+            contentDescription = null,
+            tint = colors.onSurfaceVariant,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(text = text, style = MaterialTheme.typography.labelLarge, color = colors.onSurface, maxLines = 1)
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onRemove)
+                .semantics { contentDescription = "Remove $text" },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = null,
+                tint = colors.onSurfaceVariant,
+                modifier = Modifier.size(14.dp)
             )
         }
     }

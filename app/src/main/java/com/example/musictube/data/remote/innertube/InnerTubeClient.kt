@@ -38,6 +38,13 @@ object InnerTubeClient {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
+    private val DURATION_PATTERN = Regex("""\d{1,2}(:\d{2}){1,2}""")
+
+    private val RESULT_TYPE_LABELS = setOf("Song", "Video", "Single", "EP", "Album")
+
+    private fun durationToSeconds(text: String): Long =
+        if (text.isBlank()) 0L else text.split(":").fold(0L) { acc, part -> acc * 60 + (part.toLongOrNull() ?: 0L) }
+
     private val CAPTION_PATTERN = Pattern.compile("<p\\s+t=\"(\\d+)\"\\s+d=\"(\\d+)\"[^>]*>([\\s\\S]*?)</p>")
 
     private fun getWebRemixContext(): JsonObject {
@@ -542,16 +549,22 @@ object InnerTubeClient {
                         videoId
                     )
 
+                    // Subtitle looks like "Artist • Album • 4:47": split out the artist and real duration
+                    val subtitleParts = artistText.split(" • ").map { it.trim() }.filter { it.isNotEmpty() }
+                    val durationText = subtitleParts.lastOrNull { DURATION_PATTERN.matches(it) }.orEmpty()
+                    val artistName = subtitleParts.firstOrNull { !DURATION_PATTERN.matches(it) && it !in RESULT_TYPE_LABELS }
+                        ?: artistText
+
                     tracks.add(
                         Track(
                             id = videoId,
                             youtubeVideoId = videoId,
                             title = title,
-                            artist = artistText,
-                            channel = artistText,
+                            artist = artistName,
+                            channel = artistName,
                             thumbnailUrl = thumb,
-                            duration = "3:30",
-                            durationSeconds = 210,
+                            duration = durationText,
+                            durationSeconds = durationToSeconds(durationText),
                             category = categoryTag
                         )
                     )

@@ -127,6 +127,7 @@ fun DiagnosticsSheet(
                             appendLine("Player State: ${playerState.playState}")
                             appendLine("Current Track: ${playerState.currentTrack?.title} [${playerState.currentTrack?.youtubeVideoId}]")
                             appendLine("Position: ${playerState.currentPositionSeconds}s / ${playerState.durationSeconds}s")
+                            appendLine("Playback Engine: ${if (playerState.isVideoVisible) "YouTube video player" else "Audio only (${playerState.audioFormat})"}")
                             appendLine("Error Message: ${playerState.errorMessage}")
                             appendLine("\n--- GENERAL & CRASH LOGS (${generalLogs.size}) ---")
                             generalLogs.forEach {
@@ -239,7 +240,10 @@ private fun PlayerStatusView(playerState: com.example.musictube.domain.model.Pla
                 StatusRow("Artist", playerState.currentTrack?.artist ?: "None")
                 StatusRow("Video ID", playerState.currentTrack?.youtubeVideoId ?: "None")
                 StatusRow("Position", "${playerState.currentPositionSeconds.toInt()}s / ${playerState.durationSeconds.toInt()}s")
-                StatusRow("Video Visible", "${playerState.isVideoVisible}")
+                StatusRow(
+                    "Playback Engine",
+                    if (playerState.isVideoVisible) "YouTube video player" else "Audio only · ${playerState.audioFormat ?: "resolving…"}"
+                )
                 if (!playerState.errorMessage.isNullOrBlank()) {
                     StatusRow("Error", playerState.errorMessage ?: "", MaterialTheme.colorScheme.error)
                 }

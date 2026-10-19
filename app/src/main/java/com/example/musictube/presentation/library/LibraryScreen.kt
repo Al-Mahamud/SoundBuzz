@@ -1,6 +1,8 @@
 package com.example.musictube.presentation.library
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,18 +30,12 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,16 +45,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
 import com.example.musictube.domain.model.Playlist
 import com.example.musictube.domain.model.Track
 import com.example.musictube.presentation.components.AddToPlaylistDialog
+import com.example.musictube.presentation.components.ArtworkImage
+import com.example.musictube.presentation.components.PillChip
 import com.example.musictube.presentation.components.CreatePlaylistDialog
 import com.example.musictube.presentation.components.EmptyStateView
 import com.example.musictube.presentation.components.TrackItemRow
@@ -81,190 +79,188 @@ fun LibraryScreen(
     var selectedTrackForMenu by remember { mutableStateOf<Track?>(null) }
     var selectedTrackForPlaylist by remember { mutableStateOf<Track?>(null) }
 
-    val tabs = listOf("Playlists", "Favorites", "Recently Played")
+    val colors = MaterialTheme.colorScheme
+    val tabs = listOf("Playlists", "Favorites", "History")
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Your Library",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        },
-        floatingActionButton = {
-            if (selectedTab == 0) {
-                FloatingActionButton(
-                    onClick = { showCreatePlaylistDialog = true },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = Color.White
-                ) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = "Create Playlist")
-                }
-            }
+    val playAll: (List<Track>) -> Unit = { tracks ->
+        if (tracks.isNotEmpty()) {
+            viewModel.playAll(tracks)
+            onNavigateToPlayer(tracks.first().youtubeVideoId)
         }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.background,
-                contentColor = MaterialTheme.colorScheme.primary
-            ) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = { viewModel.setSelectedTab(index) },
-                        text = {
-                            Text(
-                                text = title,
-                                fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
-                            )
-                        }
-                    )
-                }
-            }
+    }
+    val shufflePlay: (List<Track>) -> Unit = { tracks ->
+        if (tracks.isNotEmpty()) {
+            viewModel.shufflePlay(tracks)
+            onNavigateToPlayer(tracks.first().youtubeVideoId)
+        }
+    }
 
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, top = 20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Your Library",
+                style = MaterialTheme.typography.headlineLarge,
+                color = colors.onBackground,
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics { heading() }
+            )
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f)
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(colors.surface)
+                    .border(1.dp, colors.outlineVariant, CircleShape)
+                    .clickable { showCreatePlaylistDialog = true }
+                    .semantics { contentDescription = "Create playlist" },
+                contentAlignment = Alignment.Center
             ) {
-                when (selectedTab) {
-                    0 -> {
-                        // Playlists Tab
+                Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = colors.onSurface)
+            }
+        }
+
+        Row(
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            tabs.forEachIndexed { index, title ->
+                PillChip(
+                    label = title,
+                    selected = selectedTab == index,
+                    onClick = { viewModel.setSelectedTab(index) }
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .weight(1f)
+        ) {
+            when (selectedTab) {
+                0 -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
+                        item {
+                            LikedSongsCard(
+                                count = favorites.size,
+                                onOpen = { viewModel.setSelectedTab(1) },
+                                onPlayAll = { playAll(favorites) },
+                                onShuffle = { shufflePlay(favorites) }
+                            )
+                        }
+                        item {
+                            Text(
+                                text = "Playlists",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = colors.onBackground,
+                                modifier = Modifier
+                                    .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 6.dp)
+                                    .semantics { heading() }
+                            )
+                        }
                         if (playlists.isEmpty()) {
-                            EmptyStateView(
-                                message = "You don't have any playlists yet. Tap the '+' button below to create one!"
-                            )
+                            item {
+                                Text(
+                                    text = "No playlists yet. Tap + to create your first one.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = colors.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                                )
+                            }
                         } else {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = 90.dp)
-                            ) {
-                                items(playlists) { playlist ->
-                                    PlaylistItemRow(
-                                        playlist = playlist,
-                                        onClick = { onNavigateToPlaylist(playlist.id) },
-                                        onDelete = { viewModel.deletePlaylist(playlist.id) }
-                                    )
-                                }
+                            items(playlists) { playlist ->
+                                PlaylistItemRow(
+                                    playlist = playlist,
+                                    onClick = { onNavigateToPlaylist(playlist.id) },
+                                    onDelete = { viewModel.deletePlaylist(playlist.id) }
+                                )
                             }
                         }
                     }
-                    1 -> {
-                        // Favorites Tab
-                        if (favorites.isEmpty()) {
-                            EmptyStateView(
-                                message = "No favorite songs yet. Tap the heart icon on any song to add it here!"
-                            )
-                        } else {
-                            Column(modifier = Modifier.fillMaxSize()) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    Button(
-                                        onClick = {
-                                            viewModel.playAll(favorites)
-                                            onNavigateToPlayer(favorites.first().youtubeVideoId)
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.primary
-                                        )
-                                    ) {
-                                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Play All")
+                }
+                1 -> {
+                    if (favorites.isEmpty()) {
+                        EmptyStateView(
+                            message = "No favorite songs yet. Tap the heart on any song to add it here!"
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 24.dp)
+                        ) {
+                            item {
+                                PlayShuffleButtons(
+                                    onPlayAll = { playAll(favorites) },
+                                    onShuffle = { shufflePlay(favorites) },
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                                )
+                            }
+                            items(favorites) { track ->
+                                TrackItemRow(
+                                    track = track,
+                                    onTrackClick = {
+                                        viewModel.playTrack(track, favorites)
+                                        onNavigateToPlayer(track.youtubeVideoId)
+                                    },
+                                    onMoreOptionsClick = {
+                                        selectedTrackForMenu = track
                                     }
-
-                                    OutlinedButton(
-                                        onClick = {
-                                            viewModel.shufflePlay(favorites)
-                                            onNavigateToPlayer(favorites.shuffled().first().youtubeVideoId)
-                                        },
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Icon(imageVector = Icons.Default.Shuffle, contentDescription = null)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Shuffle")
-                                    }
-                                }
-
-                                LazyColumn(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(bottom = 90.dp)
-                                ) {
-                                    items(favorites) { track ->
-                                        TrackItemRow(
-                                            track = track,
-                                            onTrackClick = {
-                                                viewModel.playTrack(track, favorites)
-                                                onNavigateToPlayer(track.youtubeVideoId)
-                                            },
-                                            onMoreOptionsClick = {
-                                                selectedTrackForMenu = track
-                                            }
-                                        )
-                                    }
-                                }
+                                )
                             }
                         }
                     }
-                    2 -> {
-                        // Recently Played Tab
-                        if (history.isEmpty()) {
-                            EmptyStateView(
-                                message = "Your playback history is empty. Start exploring and playing music!"
-                            )
-                        } else {
-                            Column(modifier = Modifier.fillMaxSize()) {
+                }
+                2 -> {
+                    if (history.isEmpty()) {
+                        EmptyStateView(
+                            message = "Your playback history is empty. Start exploring and playing music!"
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 24.dp)
+                        ) {
+                            item {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                        .padding(start = 20.dp, end = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
                                         text = "${history.size} recently played",
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = colors.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f)
                                     )
                                     TextButton(onClick = { viewModel.clearHistory() }) {
-                                        Text("Clear History")
+                                        Text("Clear history")
                                     }
                                 }
-
-                                LazyColumn(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(bottom = 90.dp)
-                                ) {
-                                    items(history) { track ->
-                                        TrackItemRow(
-                                            track = track,
-                                            onTrackClick = {
-                                                viewModel.playTrack(track, history)
-                                                onNavigateToPlayer(track.youtubeVideoId)
-                                            },
-                                            onMoreOptionsClick = {
-                                                selectedTrackForMenu = track
-                                            }
-                                        )
+                            }
+                            items(history) { track ->
+                                TrackItemRow(
+                                    track = track,
+                                    onTrackClick = {
+                                        viewModel.playTrack(track, history)
+                                        onNavigateToPlayer(track.youtubeVideoId)
+                                    },
+                                    onMoreOptionsClick = {
+                                        selectedTrackForMenu = track
                                     }
-                                }
+                                )
                             }
                         }
                     }
@@ -322,65 +318,156 @@ fun LibraryScreen(
 }
 
 @Composable
+private fun LikedSongsCard(
+    count: Int,
+    onOpen: () -> Unit,
+    onPlayAll: () -> Unit,
+    onShuffle: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(24.dp)
+    Column(
+        modifier = Modifier
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+            .fillMaxWidth()
+            .clip(shape)
+            .background(colors.surface)
+            .border(1.dp, colors.outlineVariant, shape)
+            .clickable(onClick = onOpen)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(colors.primary),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Favorite,
+                    contentDescription = null,
+                    tint = colors.onPrimary,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column {
+                Text(text = "Liked songs", style = MaterialTheme.typography.headlineSmall, color = colors.onSurface)
+                Text(
+                    text = if (count == 0) "Heart songs to collect them here" else "$count songs you've hearted",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant
+                )
+            }
+        }
+        if (count > 0) {
+            PlayShuffleButtons(onPlayAll = onPlayAll, onShuffle = onShuffle)
+        }
+    }
+}
+
+@Composable
+private fun PlayShuffleButtons(
+    onPlayAll: () -> Unit,
+    onShuffle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Button(
+            onClick = onPlayAll,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+                .weight(1f)
+                .height(46.dp)
+        ) {
+            Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Play all")
+        }
+        OutlinedButton(
+            onClick = onShuffle,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.onSurface
+            ),
+            modifier = Modifier
+                .weight(1f)
+                .height(46.dp)
+        ) {
+            Icon(imageVector = Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Shuffle")
+        }
+    }
+}
+
+@Composable
 fun PlaylistItemRow(
     playlist: Playlist,
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(60.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
-        ) {
-            if (!playlist.thumbnail.isNullOrBlank()) {
-                AsyncImage(
-                    model = playlist.thumbnail,
-                    contentDescription = playlist.name,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
+        if (!playlist.thumbnail.isNullOrBlank()) {
+            ArtworkImage(
+                model = playlist.thumbnail,
+                contentDescription = playlist.name,
+                modifier = Modifier.size(56.dp),
+                shape = RoundedCornerShape(14.dp)
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(colors.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
                     imageVector = Icons.Default.QueueMusic,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
+                    tint = colors.primary,
+                    modifier = Modifier.size(28.dp)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(modifier = Modifier.width(14.dp))
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = playlist.name,
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+                color = colors.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = "${playlist.trackCount} tracks",
+                text = "Playlist · ${playlist.trackCount} tracks",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = colors.onSurfaceVariant
             )
         }
 
         IconButton(onClick = onDelete) {
             Icon(
                 imageVector = Icons.Default.Delete,
-                contentDescription = "Delete Playlist",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                contentDescription = "Delete playlist ${playlist.name}",
+                tint = colors.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
             )
         }

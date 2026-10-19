@@ -1,6 +1,31 @@
 package com.example.musictube.presentation.settings
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import com.example.musictube.domain.model.AccentOption
+import com.example.musictube.domain.model.ThemeMode
+import com.example.musictube.domain.model.ThemeSettings
+import com.example.musictube.presentation.components.SegmentOption
+import com.example.musictube.presentation.components.SegmentedControl
+import com.example.musictube.presentation.theme.OnAccentDark
+import com.example.musictube.presentation.theme.isAppInDarkTheme
+import com.example.musictube.presentation.theme.shades
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
@@ -21,7 +46,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CleaningServices
-import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
@@ -37,15 +61,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -64,7 +85,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 fun SettingsScreen(
     viewModel: SettingsViewModel = viewModel()
 ) {
-    val themeMode by viewModel.themeMode.collectAsState()
+    val themeSettings by viewModel.themeSettings.collectAsState()
     val autoplay by viewModel.autoplay.collectAsState()
     val isShuffle by viewModel.isShuffle.collectAsState()
     val currentApiKey by viewModel.currentApiKey.collectAsState()
@@ -86,92 +107,43 @@ fun SettingsScreen(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Settings",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        },
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0),
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState())
-                .padding(bottom = 100.dp)
+                .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 32.dp)
         ) {
+            Text(
+                text = "Settings",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier
+                    .padding(bottom = 8.dp)
+                    .semantics { heading() }
+            )
+
             // 1. Appearance Section
-            SettingsSectionHeader(title = "Appearance", icon = Icons.Default.ColorLens)
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.setThemeMode(ThemeMode.DARK) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = themeMode == ThemeMode.DARK,
-                            onClick = { viewModel.setThemeMode(ThemeMode.DARK) }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Dark (Recommended)", style = MaterialTheme.typography.bodyLarge)
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.setThemeMode(ThemeMode.LIGHT) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = themeMode == ThemeMode.LIGHT,
-                            onClick = { viewModel.setThemeMode(ThemeMode.LIGHT) }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Light", style = MaterialTheme.typography.bodyLarge)
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.setThemeMode(ThemeMode.SYSTEM) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = themeMode == ThemeMode.SYSTEM,
-                            onClick = { viewModel.setThemeMode(ThemeMode.SYSTEM) }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Follow System", style = MaterialTheme.typography.bodyLarge)
-                    }
-                }
-            }
+            SettingsSectionHeader(title = "Appearance", icon = Icons.Default.Palette)
+            AppearanceCard(
+                settings = themeSettings,
+                onModeChange = viewModel::setThemeMode,
+                onAccentChange = viewModel::setAccent,
+                onPureBlackChange = viewModel::setPureBlack
+            )
 
             Spacer(modifier = Modifier.height(20.dp))
 
             // 2. Playback Section
             SettingsSectionHeader(title = "Playback", icon = Icons.Default.PlayCircleOutline)
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -214,8 +186,9 @@ fun SettingsScreen(
             // 3. YouTube API Key Configuration
             SettingsSectionHeader(title = "YouTube Data API v3 Key", icon = Icons.Default.Key)
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -263,8 +236,9 @@ fun SettingsScreen(
             // 4. App Diagnostics & Logs Section
             SettingsSectionHeader(title = "App Diagnostics & Logs", icon = Icons.Default.BugReport)
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -290,7 +264,7 @@ fun SettingsScreen(
                             )
                             if (crashCount > 0) {
                                 Text(
-                                    text = "⚠️ $crashCount error/crash recorded",
+                                    text = "$crashCount error/crash recorded",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.error,
                                     fontWeight = FontWeight.Bold
@@ -318,8 +292,9 @@ fun SettingsScreen(
             // 5. Storage Section
             SettingsSectionHeader(title = "Storage", icon = Icons.Default.CleaningServices)
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -356,8 +331,9 @@ fun SettingsScreen(
             // 5. About Section
             SettingsSectionHeader(title = "About", icon = Icons.Default.Info)
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -365,13 +341,19 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.app_logo),
-                            contentDescription = "SoundBuzz Logo",
+                        Box(
                             modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                        )
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.logo_mark),
+                                contentDescription = "SoundBuzz logo",
+                                modifier = Modifier.size(width = 44.dp, height = 26.dp)
+                            )
+                        }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text("SoundBuzz", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -404,7 +386,7 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "SoundBuzz complies strictly with YouTube Terms of Service using official permitted IFrame player mechanics. Ripping, scraping or permanent audio/video extraction is prohibited.",
+                        text = "Audio mode streams audio-only via NewPipeExtractor to save data; video mode uses the embedded YouTube player.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -473,6 +455,9 @@ fun SettingsScreen(
                     Text("• Android-YouTube-Player (Pierfrancesco Soffritti MIT)", style = MaterialTheme.typography.bodySmall)
                     Text("• Coil Compose (Coil Contributors Apache 2.0)", style = MaterialTheme.typography.bodySmall)
                     Text("• Retrofit & OkHttp (Square Apache 2.0)", style = MaterialTheme.typography.bodySmall)
+                    Text("• AndroidX Media3 ExoPlayer (Google Apache 2.0)", style = MaterialTheme.typography.bodySmall)
+                    Text("• NewPipe Extractor (TeamNewPipe GPL-3.0)", style = MaterialTheme.typography.bodySmall)
+                    Text("• Manrope & Space Grotesk fonts (SIL Open Font License)", style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
@@ -507,10 +492,111 @@ fun SettingsSectionHeader(
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
+            text = title.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun AppearanceCard(
+    settings: ThemeSettings,
+    onModeChange: (ThemeMode) -> Unit,
+    onAccentChange: (AccentOption) -> Unit,
+    onPureBlackChange: (Boolean) -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val isDark = isAppInDarkTheme(settings)
+    val modes = listOf(ThemeMode.SYSTEM, ThemeMode.DARK, ThemeMode.LIGHT)
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = colors.surface),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, colors.outlineVariant),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Theme", style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
+            Spacer(modifier = Modifier.height(10.dp))
+            SegmentedControl(
+                options = listOf(
+                    SegmentOption("System", Icons.Default.BrightnessAuto),
+                    SegmentOption("Dark", Icons.Default.DarkMode),
+                    SegmentOption("Light", Icons.Default.LightMode)
+                ),
+                selectedIndex = modes.indexOf(settings.mode),
+                onSelect = { onModeChange(modes[it]) },
+                fillWidth = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp), color = colors.outlineVariant)
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Accent color",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = colors.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(settings.accent.label, style = MaterialTheme.typography.bodyMedium, color = colors.primary)
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                AccentOption.entries.forEach { option ->
+                    val swatch = if (isDark) option.shades.onDark else option.shades.onLight
+                    val selected = option == settings.accent
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .border(2.dp, if (selected) colors.onSurface else Color.Transparent, CircleShape)
+                            .padding(3.dp)
+                            .clip(CircleShape)
+                            .background(swatch)
+                            .clickable(role = Role.RadioButton) { onAccentChange(option) }
+                            .semantics {
+                                contentDescription = "${option.label} accent"
+                                this.selected = selected
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (selected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = if (isDark) OnAccentDark else Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp), color = colors.outlineVariant)
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Pure black",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (isDark) colors.onSurface else colors.onSurfaceVariant
+                    )
+                    Text(
+                        text = if (isDark) "Pitch-black backgrounds, saves battery on OLED screens" else "Available in dark theme",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = settings.pureBlack && isDark,
+                    onCheckedChange = onPureBlackChange,
+                    enabled = isDark
+                )
+            }
+        }
     }
 }
