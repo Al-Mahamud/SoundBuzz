@@ -134,7 +134,8 @@ class PlaybackManager(
                 val audio = AudioStreamResolver.resolve(track.youtubeVideoId, forceRefresh)
                 if (!isAudioMode || _playerState.value.currentTrack?.youtubeVideoId != track.youtubeVideoId) return@launch
                 audioPlayer.setMediaItem(MediaItem.fromUri(audio.url), (startSeconds * 1000).toLong())
-                audioPlayer.playWhenReady = playWhenReady
+                // A pause pressed while the stream was resolving wins
+                audioPlayer.playWhenReady = playWhenReady && _playerState.value.playState != PlayState.PAUSED
                 audioPlayer.prepare()
                 _playerState.update { it.copy(audioFormat = audio.label) }
             } catch (e: CancellationException) {
@@ -311,8 +312,8 @@ class PlaybackManager(
             }
         }
 
-        // Start persistent foreground media service
-        PlaybackService.startService(context)
+        // Media session service: lock screen / notification controls and headset buttons
+        PlaybackService.start(context)
 
         // Record history
         scope.launch {
@@ -320,28 +321,39 @@ class PlaybackManager(
         }
     }
 
+    /** Playing, or buffering a track the user asked to play. */
+    val isPlaybackActive: Boolean
+        get() = _playerState.value.playState == PlayState.PLAYING || _playerState.value.playState == PlayState.BUFFERING
+
     fun togglePlayPause() {
-        val currentState = _playerState.value.playState
-        val player = activeYouTubePlayer
-        if (currentState == PlayState.PLAYING) {
-            if (isAudioMode) audioPlayer.pause() else player?.pause()
-            _playerState.update { it.copy(playState = PlayState.PAUSED) }
-        } else if (currentState == PlayState.PAUSED || currentState == PlayState.IDLE) {
-            val track = _playerState.value.currentTrack
-            if (track != null) {
-                if (isAudioMode) {
-                    if (audioPlayer.mediaItemCount == 0 || audioPlayer.playbackState == Player.STATE_IDLE) {
-                        startAudio(track, _playerState.value.currentPositionSeconds, playWhenReady = true)
-                    } else {
-                        if (audioPlayer.playbackState == Player.STATE_ENDED) audioPlayer.seekTo(0)
-                        audioPlayer.play()
-                    }
-                } else {
-                    player?.play()
-                }
-                _playerState.update { it.copy(playState = PlayState.PLAYING) }
+        if (isPlaybackActive) pause() else play()
+    }
+
+    fun pause() {
+        if (!isPlaybackActive) return
+        if (isAudioMode) audioPlayer.pause() else activeYouTubePlayer?.pause()
+        _playerState.update { it.copy(playState = PlayState.PAUSED) }
+    }
+
+    fun play() {
+        if (isPlaybackActive) return
+        val track = _playerState.value.currentTrack ?: return
+        if (isAudioMode) {
+            if (audioPlayer.mediaItemCount == 0 || audioPlayer.playbackState == Player.STATE_IDLE) {
+                startAudio(track, _playerState.value.currentPositionSeconds, playWhenReady = true)
+            } else {
+                if (audioPlayer.playbackState == Player.STATE_ENDED) audioPlayer.seekTo(0)
+                audioPlayer.play()
             }
+        } else {
+            activeYouTubePlayer?.play()
         }
+        _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
+    }
+
+    fun playFromQueue(index: Int) {
+        val q = _queue.value
+        if (index in q.indices) playTrack(q[index])
     }
 
     fun seekTo(seconds: Float) {
@@ -471,7 +483,6 @@ class PlaybackManager(
         _queue.value = emptyList()
         _currentQueueIndex.value = -1
         _playerState.update { it.copy(currentTrack = null, playState = PlayState.IDLE) }
-        PlaybackService.stopService(context)
     }
 
     fun stopAndDismiss() {
@@ -487,7 +498,6 @@ class PlaybackManager(
         _queue.value = emptyList()
         _currentQueueIndex.value = -1
         _playerState.update { PlayerState(isVideoVisible = keepVideoMode) }
-        PlaybackService.stopService(context)
     }
 
     fun shuffleQueue() {

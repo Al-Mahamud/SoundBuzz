@@ -90,10 +90,7 @@ class PlayerViewModel(
     }
 
     fun playFromQueue(index: Int) {
-        val q = queue.value
-        if (index in q.indices) {
-            playbackManager.playTrack(q[index])
-        }
+        playbackManager.playFromQueue(index)
     }
 
     fun removeFromQueue(index: Int) {
