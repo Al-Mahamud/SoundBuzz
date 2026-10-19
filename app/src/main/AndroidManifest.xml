@@ -30,10 +30,15 @@
             </intent-filter>
         </activity>
 
+        <!-- Media session service: headset buttons, lock screen and notification controls -->
         <service
             android:name=".playback.PlaybackService"
-            android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

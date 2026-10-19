@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">SoundBuzz</string>
+    <string name="playback_channel_name">SoundBuzz Playback</string>
 </resources>
