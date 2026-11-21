@@ -108,6 +108,12 @@ SoundBuzz offers a Spotify-like user experience powered by YouTube's vast catalo
 - **API Key Configuration**: In-app configuration for YouTube Data API v3 key.
 - **About**: Version information, open-source licenses, and YouTube API compliance notice.
 
+### G. Open Videos from YouTube
+- **Share → SoundBuzz**: while watching in the YouTube or YouTube Music app, tap **Share** and pick **SoundBuzz** (it may sit under *More* the first time). The same video opens in the full player and starts playing.
+- **Open YouTube links**: `youtube.com/watch`, `youtu.be`, Shorts, live, embed and `music.youtube.com` links can be opened with SoundBuzz from browsers and chat apps (enable *Settings → Apps → SoundBuzz → Open by default* to be offered it).
+- Honors a shared start time (`?t=1m30s`); sharing the video that's already playing just brings the player up.
+- Title, channel, artwork and duration are fetched in the same request that resolves the audio stream, so playback starts without a second lookup.
+
 ---
 
 ## 3. Architecture
@@ -268,6 +274,7 @@ SoundBuzz includes unit tests covering:
 - **`RecommendationEngineTest`**: Validates weighted scoring rules (artist match +5, genre match +4, favorite artist +5, recent bonus +2, already played -1).
 - **`DurationUtilsTest`**: Validates ISO-8601 duration parsing (`PT3M45S` -> 225s) and formatting (`225s` -> `"3:45"`).
 - **`EntityMappingTest`**: Validates Room entity transformations to domain models and back.
+- **`YouTubeLinkParserTest`**: Validates extracting the video ID and start time from shared YouTube links and share text.
 
 To run tests:
 ```bash

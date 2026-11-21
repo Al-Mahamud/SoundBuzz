@@ -1,6 +1,7 @@
 package com.example.musictube
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -35,6 +36,11 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Launched via "Share → SoundBuzz" or a YouTube link; skipped on recreation (rotation etc.)
+        if (savedInstanceState == null) {
+            MusicTubeApplication.instance.sharedLinkHandler.handle(intent)
+        }
+
         setContent {
             // Saved in the preferences table, so every screen sees the same theme immediately
             val repository = MusicTubeApplication.instance.repository
@@ -45,5 +51,12 @@ class MainActivity : ComponentActivity() {
                 MusicTubeApp()
             }
         }
+    }
+
+    // singleTask: sharing another video while the app is open lands here instead of a new instance
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        MusicTubeApplication.instance.sharedLinkHandler.handle(intent)
     }
 }

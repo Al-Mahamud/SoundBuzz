@@ -4,6 +4,7 @@ import android.app.Application
 import com.example.musictube.data.local.database.MusicTubeDatabase
 import com.example.musictube.data.repository.MusicRepository
 import com.example.musictube.playback.PlaybackManager
+import com.example.musictube.playback.SharedLinkHandler
 
 class MusicTubeApplication : Application() {
 
@@ -16,6 +17,9 @@ class MusicTubeApplication : Application() {
     lateinit var playbackManager: PlaybackManager
         private set
 
+    lateinit var sharedLinkHandler: SharedLinkHandler
+        private set
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -23,6 +27,7 @@ class MusicTubeApplication : Application() {
         database = MusicTubeDatabase.getInstance(this)
         repository = MusicRepository(database)
         playbackManager = PlaybackManager(repository, this)
+        sharedLinkHandler = SharedLinkHandler(this, playbackManager, database.trackDao())
     }
 
     companion object {

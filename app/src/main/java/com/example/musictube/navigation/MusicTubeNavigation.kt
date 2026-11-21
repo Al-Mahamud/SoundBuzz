@@ -45,6 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -99,6 +100,16 @@ fun MusicTubeApp() {
     val currentDestination = navBackStackEntry?.destination?.route
 
     var isPlayerExpanded by rememberSaveable { mutableStateOf(false) }
+
+    // A video shared from the YouTube app started playing: show the full player
+    val sharedLinkHandler = MusicTubeApplication.instance.sharedLinkHandler
+    val openPlayerRequest by sharedLinkHandler.openPlayerRequest.collectAsState()
+    LaunchedEffect(openPlayerRequest) {
+        if (openPlayerRequest) {
+            isPlayerExpanded = true
+            sharedLinkHandler.consumeOpenPlayerRequest()
+        }
+    }
 
     // Intercept back button when player is full screen
     BackHandler(enabled = isPlayerExpanded) {
