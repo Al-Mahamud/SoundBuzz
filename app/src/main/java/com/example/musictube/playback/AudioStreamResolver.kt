@@ -1,7 +1,9 @@
 package com.example.musictube.playback
 
 import android.net.Uri
+import com.example.musictube.domain.model.Track
 import com.example.musictube.utils.DiagnosticsLogger
+import com.example.musictube.utils.DurationUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -64,10 +66,47 @@ object AudioStreamResolver {
             cache[videoId]?.takeIf { it.expiresAtMs > System.currentTimeMillis() }?.let { return@withContext it }
         }
 
-        ensureInitialized()
-        val info = StreamInfo.getInfo(ServiceList.YouTube, "https://www.youtube.com/watch?v=$videoId")
-        val stream = pickStream(info.audioStreams)
+        cacheAudio(videoId, fetchInfo(videoId))
             ?: throw IOException("No audio-only stream available for $videoId")
+    }
+
+    /**
+     * Looks up a video's title, channel, artwork and duration (used for links shared from the
+     * YouTube app). The same extraction also primes the audio cache, so playback starts right away.
+     */
+    suspend fun fetchTrack(videoId: String): Track = withContext(Dispatchers.IO) {
+        val info = fetchInfo(videoId)
+        try {
+            cacheAudio(videoId, info)
+        } catch (e: Exception) {
+            // Metadata is still useful; playback will retry or fall back to the YouTube player
+            DiagnosticsLogger.logPlayer("AudioStreamResolver", "No audio stream cached for $videoId: ${e.message}")
+        }
+        val channel = info.uploaderName?.removeSuffix(" - Topic")?.ifBlank { null } ?: "YouTube"
+        val seconds = info.duration.coerceAtLeast(0L)
+        Track(
+            id = videoId,
+            youtubeVideoId = videoId,
+            title = info.name?.ifBlank { null } ?: "YouTube video",
+            artist = channel,
+            channel = channel,
+            thumbnailUrl = info.thumbnails.maxByOrNull { it.height }?.url
+                ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+            duration = if (seconds > 0) DurationUtils.formatSecondsToTime(seconds) else "",
+            durationSeconds = seconds,
+            category = "Shared",
+            publishedAt = info.textualUploadDate.orEmpty(),
+            viewCount = info.viewCount.coerceAtLeast(0L)
+        )
+    }
+
+    private fun fetchInfo(videoId: String): StreamInfo {
+        ensureInitialized()
+        return StreamInfo.getInfo(ServiceList.YouTube, "https://www.youtube.com/watch?v=$videoId")
+    }
+
+    private fun cacheAudio(videoId: String, info: StreamInfo): ResolvedAudio? {
+        val stream = pickStream(info.audioStreams) ?: return null
 
         val resolved = ResolvedAudio(
             videoId = videoId,
@@ -79,7 +118,7 @@ object AudioStreamResolver {
         )
         cache[videoId] = resolved
         DiagnosticsLogger.logPlayer("AudioStreamResolver", "Resolved $videoId -> itag ${stream.itag} (${resolved.label})")
-        resolved
+        return resolved
     }
 
     fun invalidate(videoId: String) {

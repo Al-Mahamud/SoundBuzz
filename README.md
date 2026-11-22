@@ -108,6 +108,13 @@ SoundBuzz offers a Spotify-like user experience powered by YouTube's vast catalo
 - **API Key Configuration**: In-app configuration for YouTube Data API v3 key.
 - **About**: Version information, open-source licenses, and YouTube API compliance notice.
 
+### G. Open Videos from YouTube
+- **Share → SoundBuzz**: while watching in the YouTube or YouTube Music app, tap **Share** and pick **SoundBuzz** (it may sit under *More* the first time). The same video opens in the full player and starts playing.
+- **Open YouTube links**: `youtube.com/watch`, `youtu.be`, Shorts, live, embed and `music.youtube.com` links can be opened with SoundBuzz from browsers and chat apps (enable *Settings → Apps → SoundBuzz → Open by default* to be offered it).
+- Honors a shared start time (`?t=1m30s`); sharing the video that's already playing just brings the player up.
+- Title, channel, artwork and duration are fetched in the same request that resolves the audio stream, so playback starts without a second lookup.
+- Links that aren't a single video (channels, playlists) show a short "doesn't look like a YouTube video link" message instead.
+
 ---
 
 ## 3. Architecture
@@ -152,7 +159,7 @@ Local Data Layer (Room)        Remote Data Layer (Retrofit YouTube API)
   │   ├── model (Track, Playlist, Artist, Category, PlayerState, PlaybackState)
   │   └── usecase (RecommendationEngine)
   ├── navigation (MusicTubeNavigation, Screen)
-  ├── playback (PlaybackManager)
+  ├── playback (PlaybackManager, PlaybackService, AudioStreamResolver, SharedLinkHandler, SessionPlayer, HeadsetClickHandler)
   ├── presentation
   │   ├── artist (ArtistDetailScreen, ArtistDetailViewModel)
   │   ├── category (CategoryDetailScreen, CategoryDetailViewModel)
@@ -164,7 +171,7 @@ Local Data Layer (Room)        Remote Data Layer (Retrofit YouTube API)
   │   ├── search (SearchScreen, SearchViewModel)
   │   ├── settings (SettingsScreen, SettingsViewModel)
   │   └── theme (Color, Theme, Type)
-  └── utils (DurationUtils)
+  └── utils (DurationUtils, YouTubeLinkParser, NavUtils, DiagnosticsLogger)
   ```
 
 ---
@@ -260,6 +267,22 @@ buildConfigField("String", "DEFAULT_YOUTUBE_API_KEY", "\"YOUR_YOUTUBE_API_KEY\""
 4. Select your connected Android device or emulator.
 5. Click **Run 'app'** (or press Shift + F10).
 
+### Build a release APK:
+```bash
+./gradlew assembleRelease
+```
+The signed APK is written to `app/build/outputs/apk/release/app-release.apk`. It's signed with `app/release.keystore` (kept out of git), so it installs as an update over an earlier SoundBuzz release without losing playlists or history:
+```bash
+adb install -r app/build/outputs/apk/release/app-release.apk
+```
+
+### Try opening a video from YouTube:
+In the YouTube app, tap **Share** on any video and pick **SoundBuzz**. Without the YouTube app, you can send the same share from a computer:
+```bash
+adb shell am start -a android.intent.action.SEND -t text/plain \
+  --es android.intent.extra.TEXT "https://youtu.be/dQw4w9WgXcQ?t=30" com.example.musictube
+```
+
 ---
 
 ## 10. Testing
@@ -268,6 +291,9 @@ SoundBuzz includes unit tests covering:
 - **`RecommendationEngineTest`**: Validates weighted scoring rules (artist match +5, genre match +4, favorite artist +5, recent bonus +2, already played -1).
 - **`DurationUtilsTest`**: Validates ISO-8601 duration parsing (`PT3M45S` -> 225s) and formatting (`225s` -> `"3:45"`).
 - **`EntityMappingTest`**: Validates Room entity transformations to domain models and back.
+- **`AudioStreamResolverTest`**: Validates picking the most data-efficient audio-only stream.
+- **`MediaButtonTest`** / **`MediaNotificationTest`**: Validate headset button handling and the media notification.
+- **`YouTubeLinkParserTest`**: Validates extracting the video ID and start time from shared YouTube links and share text.
 
 To run tests:
 ```bash

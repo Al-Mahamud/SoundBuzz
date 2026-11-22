@@ -264,7 +264,7 @@ class PlaybackManager(
         }
     }
 
-    fun playTrack(track: Track, newQueue: List<Track>? = null) {
+    fun playTrack(track: Track, newQueue: List<Track>? = null, startSeconds: Float = 0f) {
         if (newQueue != null && newQueue.isNotEmpty()) {
             _queue.value = newQueue
             val index = newQueue.indexOfFirst { it.youtubeVideoId == track.youtubeVideoId }
@@ -290,7 +290,7 @@ class PlaybackManager(
             it.copy(
                 currentTrack = track,
                 playState = PlayState.BUFFERING,
-                currentPositionSeconds = 0f,
+                currentPositionSeconds = startSeconds,
                 durationSeconds = if (track.durationSeconds > 0) track.durationSeconds.toFloat() else 0f,
                 isVideoVisible = if (revertToAudio) false else it.isVideoVisible,
                 audioFormat = null,
@@ -301,13 +301,13 @@ class PlaybackManager(
         com.example.musictube.utils.DiagnosticsLogger.logPlayer("playTrack", "${track.title} [${track.youtubeVideoId}] audioMode=$isAudioMode")
         if (isAudioMode) {
             activeYouTubePlayer?.pause()
-            startAudio(track, 0f, playWhenReady = true)
+            startAudio(track, startSeconds, playWhenReady = true)
         } else {
             stopAudio()
             val player = activeYouTubePlayer
             if (player != null && isPlayerReady) {
                 com.example.musictube.utils.DiagnosticsLogger.logPlayer("playTrack", "player.loadVideo(${track.youtubeVideoId})")
-                player.loadVideo(track.youtubeVideoId, 0f)
+                player.loadVideo(track.youtubeVideoId, startSeconds)
                 _playerState.update { it.copy(playState = PlayState.PLAYING, errorMessage = null) }
             }
         }
